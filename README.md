@@ -70,8 +70,9 @@ sin tarjeta, sin auto-cobro).
    Sube toda la carpeta (backend + `public/`). El cron queda registrado por
    `Deno.cron` en `src/main.ts`; en la consola de la app puedes ver logs y el cron.
 
-4. Abre la URL resultante: **https://mudae-timer.deno.dev** (o la que elijas en
-   Settings de la app).
+4. Abre la URL resultante. Ahora mismo:
+   **https://mudae-timer-hddj4r2c765f.angelgonzmor-sketch.deno.net**.
+   Con app renombrada a slug `mudae-timer` (Settings de la app): **https://mudae-timer.angelgonzmor-sketch.deno.net**.
 
 5. Despues del despliegue, en cada dispositivo: abre la nueva URL, vuelve a
    **Activar notificaciones** (el permiso se concede por URL) y, si usabas
@@ -79,8 +80,11 @@ sin tarjeta, sin auto-cobro).
 
 ### KV y migracion
 
-El deploy crea una base KV del proyecto que `src/main.ts` usa automaticamente
-(`Deno.openKv()`).
+En el nuevo Deno Deploy la KV **no es automatica**: en la consola de la
+organizacion, **Databases > Provision Database** (engine Deno KV, nombre
+`mudae-kv`) y luego **Assign** a la app `mudae-timer`. Sin eso, el build falla
+(o la app no puede abrir `Deno.openKv()`). Una vez asignada, `src/main.ts` la
+usa automaticamente con `Deno.openKv()` (una base por timeline: prod/preview).
 
 Hoy el KV de Cloudflare esta **vacio**: los temporizadores viven en el localStorage
 de cada dispositivo, asi que no hay datos que migrar (solo hay que re-parejar cada
