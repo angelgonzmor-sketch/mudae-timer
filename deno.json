@@ -3,7 +3,10 @@
     "test": "deno test --allow-all --unstable-kv"
   },
   "deploy": {
-    "entrypoint": "src/main.ts"
+    "runtime": {
+      "type": "dynamic",
+      "entrypoint": "./src/main.ts"
+    }
   },
   "lint": {
     "include": ["src/**/*", "tools/**/*"]

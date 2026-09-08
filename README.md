@@ -59,7 +59,7 @@ sin tarjeta, sin auto-cobro).
    > Se usa `deno run --allow-all jsr:@deno/deploy` (el modulo CLI del propio Deno
    > Deploy) porque el subcomando integrado `deno deploy` del CLI tiene un bug en
    > algunas versiones: `Option "--prod" can only occur once, but was found several
-   > times`. `deno.json` define `deploy.entrypoint = "src/main.ts"`.
+   > times`. `deno.json` define `deploy.runtime.entrypoint = "./src/main.ts"`.
 
 3. Desplegar (desde la raiz, cada cambio):
 
