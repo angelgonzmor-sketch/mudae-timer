@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>Mudae Timer</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #111827; --bg2: #1f2937; --line: #374151;
+    --txt: #f3f4f6; --mut: #9ca3af;
+    --acc: #6366f1; --ok: #22c55e; --warn: #f59e0b; --danger: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 14px 40px; }
+
+  header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+  h1 { font-size: 22px; margin: 0 auto 0 0; letter-spacing: .3px; }
+  h1 span { color: var(--acc); }
+  .push-ok { color: var(--ok); } .push-warn { color: var(--warn); }
+
+  button {
+    background: var(--bg2); color: var(--txt); border: 1px solid var(--line);
+    border-radius: 10px; padding: 9px 12px; font-size: 14px; cursor: pointer;
+  }
+  button:hover { border-color: var(--acc); }
+  button.primary { background: var(--acc); border-color: var(--acc); color: #fff; }
+  button.ghost { background: transparent; }
+  button.danger { color: var(--danger); border-color: var(--danger); }
+  select, input[type=text], input[type=number], textarea {
+    background: var(--bg2); color: var(--txt); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 10px; font-size: 14px; width: 100%;
+  }
+  textarea { resize: vertical; min-height: 110px; }
+  label { font-size: 13px; color: var(--mut); display: block; margin: 10px 0 4px; }
+
+  .probar { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .probar select { width: auto; flex: 1; min-width: 120px; }
+  #profileName { font-weight: 700; margin-right: 4px; }
+
+  .timer {
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 14px;
+    padding: 12px 14px; margin-bottom: 10px;
+  }
+  .head { display: flex; align-items: center; gap: 10px; }
+  .badge {
+    width: 38px; height: 38px; flex: 0 0 38px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--acc), #8b5cf6);
+    display: grid; place-items: center; font-weight: 800; font-size: 17px;
+  }
+  .title { flex: 1; min-width: 0; }
+  .tlabel { font-weight: 700; }
+  .tsub { font-size: 12px; color: var(--mut); }
+  .count { font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 700; }
+  .count-done { color: var(--ok); }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; margin: 12px 0 8px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--acc); border-radius: 3px; transition: width .4s linear; }
+  .meta { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    font-size: 12px; padding: 3px 8px; border-radius: 999px; background: var(--bg);
+    border: 1px solid var(--line); color: var(--mut);
+  }
+  .chip.info { color: var(--acc); }
+  .chip.warn { color: var(--warn); }
+  .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .actions button { padding: 6px 10px; font-size: 13px; }
+  .hint { color: var(--mut); text-align: center; padding: 30px 10px; border: 1px dashed var(--line); border-radius: 14px; }
+
+  .group {
+    border: 1px solid var(--line); border-radius: 14px; margin-bottom: 14px; padding: 6px 10px 10px;
+  }
+  .group summary {
+    cursor: pointer; user-select: none; list-style: none; font-weight: 800; font-size: 15px;
+    color: var(--txt); padding: 8px 4px 10px;
+  }
+  .group summary::-webkit-details-marker { display: none; }
+  .group summary::before { content: "▸ "; color: var(--acc); }
+  .group[open] summary::before { content: "▾ "; color: var(--acc); }
+  .group-title .n { color: var(--acc); font-variant-numeric: tabular-nums; }
+  .group .timer:last-child { margin-bottom: 4px; }
+  footer { color: var(--mut); font-size: 12px; margin-top: 26px; text-align: center; }
+
+  .modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    display: none; align-items: flex-end; justify-content: center; padding: 15px; z-index: 20;
+  }
+  .modal.open { display: flex; }
+  .modalbox {
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 16px;
+    width: 100%; max-width: 480px; max-height: 86vh; overflow: auto; padding: 16px;
+  }
+  .modalbox h2 { margin: 0 0 8px; font-size: 17px; }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .ta-cmd { background: #0f172a; border: 1px dashed var(--line); border-radius: 8px; padding: 8px; font-family: ui-monospace, Consolas, monospace; font-size: 13px; word-break: break-all; }
+  .prow { display: flex; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .prow input[type=checkbox] { width: 18px; height: 18px; flex: 0 0 18px; }
+  .pname { flex: 1; font-size: 14px; min-width: 0; }
+  .prow input[type=text] { width: 110px; flex: 0 0 110px; }
+  .notice {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: var(--acc); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35); z-index: 30;
+  }
+  @media (max-width: 480px) { .count { font-size: 17px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Mudae<span>Timer</span></h1>
+    <button id="pasteBtn" class="primary">Pegar $tu</button>
+    <button id="addBtn">Anadir tiempo</button>
+    <button id="pushBtn">Activar notificaciones</button>
+    <button id="syncBtn">Sincronizar</button>
+  </header>
+
+  <div class="probar">
+    <span id="profileName">Mi servidor</span>
+    <select id="profileSel" aria-label="Perfil"></select>
+    <button id="addProfile">Nuevo perfil</button>
+    <button id="delProfile" class="ghost danger">Eliminar</button>
+  </div>
+
+  <div id="timers"></div>
+
+  <footer>
+    App de recordatorios 100% manual: no se conecta a tu cuenta de Discord ni ejecuta comandos.
+    Respeta los términos de Discord y las reglas de Mudae (sin self-bots ni automatización).
+  </footer>
+</div>
+
+<div class="modal" id="addModal">
+  <div class="modalbox">
+    <h2>Anadir temporizador</h2>
+    <label for="addCat">Categoria</label>
+    <select id="addCat"></select>
+    <label for="addTime">Tiempo (ej: 2h 30m)</label>
+    <input type="text" id="addTime" placeholder="2h 30m">
+    <label>Modo</label>
+    <div style="display:flex;gap:14px;margin-bottom:6px">
+      <label style="margin:0"><input type="radio" name="mode" value="once" checked> Una vez</label>
+      <label style="margin:0"><input type="radio" name="mode" value="repeat"> Repetir cada ciclo</label>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;margin:0">
+      <input type="checkbox" id="addWarn" style="width:auto"> Avisar antes (min)
+      <input type="number" id="addWarnTime" value="5" min="1" style="width:80px">
+    </label>
+    <label for="addLabel">Etiqueta (opcional)</label>
+    <input type="text" id="addLabel" placeholder="Auto según categoría">
+    <div class="modal-actions">
+      <button data-close="addModal" class="ghost">Cancelar</button>
+      <button id="addSave" class="primary">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="pasteModal">
+  <div class="modalbox">
+    <h2>Pegar $tu</h2>
+    <p style="margin:6px 0">Copia en Discord el texto del comando <b>$tu</b> (o <b>$tus</b> por DM) y pegalo aqui. Se detectaran automaticamente los tiempos por categoria.</p>
+    <textarea id="pasteText" placeholder="(texto de $tu...)"></textarea>
+    <div style="display:flex;gap:8px;margin:10px 0">
+      <button id="pasteDetect" class="primary">Detectar tiempos</button>
+      <button id="taCopyBtn" class="ghost">Copiar comando $ta recomendado</button>
+    </div>
+    <div class="ta-cmd" id="taCopy"></div>
+    <div id="pasteResults" style="margin-top:10px"></div>
+    <div class="modal-actions">
+      <button data-close="pasteModal" class="ghost">Cerrar</button>
+      <button id="pasteAdd" class="primary" style="display:none">Anadir seleccionados</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="syncModal">
+  <div class="modalbox">
+    <h2>Sincronizar dispositivos</h2>
+    <p style="margin:6px 0" id="syncHint"></p>
+    <div id="syncCodeBox" style="display:none">
+      <label for="syncCodeView">Codigo compartido</label>
+      <div class="row" style="align-items:center">
+        <input type="text" id="syncCodeView" readonly style="font-family:ui-monospace,Consolas,monospace;text-transform:uppercase">
+        <button id="syncCopy" style="flex:0 0 auto">Copiar</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button id="syncCreate" class="primary" style="flex:1">Crear cuenta</button>
+      <button id="syncLeave" class="ghost danger" style="display:none;flex:1">Salir de la sincronizacion</button>
+    </div>
+    <label for="syncJoinCode" style="margin-top:12px">Codigo de otra persona/dispositivo</label>
+    <div class="row" style="align-items:center">
+      <input type="text" id="syncJoinCode" placeholder="MT-XXXX-XXXX">
+      <button id="syncJoin" style="flex:0 0 auto">Unirme</button>
+    </div>
+    <div class="modal-actions">
+      <button data-close="syncModal" class="ghost">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="editModal">
+  <div class="modalbox">
+    <h2>Editar tiempo</h2>
+    <div class="row" style="align-items:flex-end">
+      <div>
+        <label for="editHours">Horas</label>
+        <input type="number" id="editHours" value="1" min="0" max="168">
+      </div>
+      <div>
+        <label for="editMinutes">Minutos</label>
+        <input type="number" id="editMinutes" value="0" min="0" max="59">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button data-close="editModal" class="ghost">Cancelar</button>
+      <button id="editSave" class="primary">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script src="/parse.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

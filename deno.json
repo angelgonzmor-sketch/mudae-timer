@@ -1,0 +1,14 @@
+{
+  "tasks": {
+    "test": "deno test --allow-all --unstable-kv"
+  },
+  "deploy": {
+    "entrypoint": "src/main.ts"
+  },
+  "lint": {
+    "include": ["src/**/*", "tools/**/*"]
+  },
+  "fmt": {
+    "include": ["src/**/*", "tools/**/*"]
+  }
+}

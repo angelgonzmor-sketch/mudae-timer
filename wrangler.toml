@@ -1,0 +1,20 @@
+name = "mudae-timer"
+main = "worker/index.js"
+compatibility_date = "2025-01-01"
+
+# Estaticos de la PWA servidos por el mismo worker.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# Almacenamiento. Crea el namespace con:
+#   npx wrangler kv namespace create TIMERS
+# y sustituye los dos IDs por el que te devuelva.
+[[kv_namespaces]]
+binding = "TIMERS"
+id = "e5ac957f37cb4ab4970ccdf17df571b9"
+preview_id = "e5ac957f37cb4ab4970ccdf17df571b9"
+
+# Cron cada minuto: revisa y envia los avisos vencidos.
+[triggers]
+crons = ["* * * * *"]
