@@ -267,9 +267,24 @@
     syncTimer = setTimeout(function () { pushState(); }, immediate ? 200 : SYNC_DELAY_MS);
   }
 
+  function localTimerCount() {
+    var prof = activeProfile();
+    return (prof && prof.timers) ? prof.timers.length : 0;
+  }
+
   async function pushState() {
     if (!onlineOk()) { setSyncStatus('⚠ Sin conexión'); return; }
     try {
+      var cur = await fetch(SYNC_URL, { cache: 'no-store' });
+      var remoto = cur.ok ? await cur.json() : null;
+      var tsRemote = (remoto && remoto.guardadoEn) || 0;
+      var remoteTimers = remoto && remoto.profiles
+        ? remoto.profiles.reduce(function (n, p) { return n + (p.timers || []).length; }, 0) : 0;
+      if (tsRemote > syncTs && remoto.profiles) { adoptRemote(remoto.profiles, tsRemote); return; }
+      if (localTimerCount() === 0 && remoteTimers > 0 && remoto.profiles) {
+        adoptRemote(remoto.profiles, tsRemote);
+        return;
+      }
       var guardadoEn = Date.now();
       var r = await fetch(SYNC_URL, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -323,7 +338,9 @@
 
   function initSync() {
     document.getElementById('syncBtn').onclick = function () { openModal('syncModal'); showSyncModal(); };
-    document.getElementById('syncForce').onclick = function () { scheduleSync(true); };
+    document.getElementById('syncForce').onclick = function () {
+      pullSync().then(function () { if (!syncPending) scheduleSync(true); });
+    };
     setSyncStatus(syncTs ? '✓ Sincronizado' : '');
   }
   function showSyncModal() {
