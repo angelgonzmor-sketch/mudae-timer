@@ -305,6 +305,10 @@
 
   async function pullSync() {
     if (!onlineOk()) return;
+    if (syncTs === 0) {
+      setSyncStatus('· Pega tu codigo en Sincronizar');
+      return;
+    }
     try {
       var r = await fetch(SYNC_URL, { cache: 'no-store' });
       if (!r.ok) throw new Error(String(r.status));
@@ -341,14 +345,44 @@
     document.getElementById('syncForce').onclick = function () {
       pullSync().then(function () { if (!syncPending) scheduleSync(true); });
     };
+    document.getElementById('syncJoin').onclick = syncJoin;
     setSyncStatus(syncTs ? '✓ Sincronizado' : '');
   }
   function showSyncModal() {
     var st = document.getElementById('syncStatusText');
     if (st) st.textContent = document.getElementById('sync-status').textContent || 'Aun no sincronizado';
     var hint = document.getElementById('syncHint');
-    if (hint) hint.textContent = 'Elige con el desplegable de arriba el perfil que quieres usar en este dispositivo. '
-      + 'Cada cambio se sube solo y al abrir la app se descarga la ultima version guardada.';
+    if (hint) hint.textContent = 'Pega el codigo de tu sesion (como antes) y se aplicara la sesion mas reciente. '
+      + 'Una vez unido, cada cambio se sube solo.';
+    var input = document.getElementById('syncCode');
+    if (input && !input.value) {
+      try { input.value = localStorage.getItem('mudaeSyncCode') || ''; } catch (e) {}
+    }
+  }
+  function syncJoin() {
+    var input = document.getElementById('syncCode');
+    var joinStatus = document.getElementById('syncJoinStatus');
+    var code = (input && (input.value || '').trim()) || '';
+    if (!code) {
+      if (joinStatus) joinStatus.textContent = 'Pega un codigo para continuar.';
+      if (input) input.focus();
+      return;
+    }
+    if (joinStatus) joinStatus.textContent = 'Consultando la sesion mas reciente...';
+    fetch(SYNC_URL, { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (remoto) {
+        if (!remoto || !remoto.profiles || !remoto.profiles.length) throw new Error('no hay datos de sesion');
+        adoptRemote(remoto.profiles, (remoto && remoto.guardadoEn) || 0);
+        try { localStorage.setItem('mudaeSyncCode', code); } catch (e) {}
+        if (input) input.value = code;
+        var n = remoto.profiles.reduce(function (c, p) { return c + (p.timers || []).length; }, 0);
+        if (joinStatus) joinStatus.textContent = 'Sincronizado a la sesion mas reciente (' + n + ' temporizadores).';
+        setSyncStatus('✓ Sincronizado');
+      })
+      .catch(function (e) {
+        if (joinStatus) joinStatus.textContent = 'Error: ' + e.message;
+      });
   }
 
   // ---------- Persistencia + render ----------

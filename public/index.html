@@ -188,8 +188,12 @@
     <h2>Sincronizar dispositivos</h2>
     <p style="margin:6px 0" id="syncHint"></p>
     <p id="syncStatusText" class="chip"></p>
+    <label style="display:block;margin-top:10px;font-size:13px">Codigo de sesion (ej. MT-9MZJ-6USS)</label>
+    <input id="syncCode" type="text" spellcheck="false" style="width:100%;margin:4px 0 8px" placeholder="MT-9MZJ-6USS">
+    <p id="syncJoinStatus" style="font-size:12px;min-height:16px"></p>
     <div class="modal-actions">
-      <button id="syncForce" class="primary">Forzar sincronizacion</button>
+      <button id="syncJoin" class="primary">Unirme / sincronizar</button>
+      <button id="syncForce" class="ghost">Forzar sincronizacion</button>
       <button data-close="syncModal" class="ghost">Cerrar</button>
     </div>
   </div>
