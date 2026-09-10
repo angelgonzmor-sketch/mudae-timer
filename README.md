@@ -49,19 +49,24 @@ sin tarjeta, sin auto-cobro).
    **nombre de la organizacion**: se ve en la URL de la consola
    (`https://console.deno.com/<org>`).
 
-2. Crear la aplicacion (solo la primera vez):
+2. Crear la aplicacion (solo la primera vez). Con la consola web (cuenta GitHub
+   vinculada): **Projects > New Project > GitHub** y eliges
+   `angelgonzmor-sketch/mudae-timer`. O con la CLI, en `deploy.ps1`:
 
-   ```bash
+   ```powershell
    $env:DENO_DEPLOY_TOKEN = "ddo_xxx"
-   deno run --allow-all jsr:@deno/deploy create --json --non-interactive --org <org> --app mudae-timer --source local --runtime-mode dynamic --entrypoint src/main.ts --region global
+   .\deploy.ps1 -App mudae-timer     # crea
+   .\deploy.ps1 -DryRun              # valida flags sin crear nada
    ```
 
-   > Se usa `deno run --allow-all jsr:@deno/deploy` (el modulo CLI del propio Deno
+   > `deploy.ps1` (y todos los comandos de aqui) usa
+   > `deno run --allow-all jsr:@deno/deploy` (el modulo CLI del propio Deno
    > Deploy) porque el subcomando integrado `deno deploy` del CLI tiene un bug en
    > algunas versiones: `Option "--prod" can only occur once, but was found several
    > times`. `deno.json` define `deploy.runtime.entrypoint = "./src/main.ts"`.
 
-3. Desplegar (desde la raiz, cada cambio):
+3. Desplegar (cambios): con fuente GitHub basta `git push` a `main` (la app se
+   reconstruye sola). Con fuente local:
 
    ```bash
    deno run --allow-all jsr:@deno/deploy --json --non-interactive --org <org> --app mudae-timer --prod
@@ -71,8 +76,14 @@ sin tarjeta, sin auto-cobro).
    `Deno.cron` en `src/main.ts`; en la consola de la app puedes ver logs y el cron.
 
 4. Abre la URL resultante. Ahora mismo:
-   **https://mudae-timer-hddj4r2c765f.angelgonzmor-sketch.deno.net**.
-   Con app renombrada a slug `mudae-timer` (Settings de la app): **https://mudae-timer.angelgonzmor-sketch.deno.net**.
+   **https://mudae-timer-hddj4r2c765f.angelgonzmor-sketch.deno.net** (suspendida por
+   limites de uso). Con la app nueva llamada `mudae-timer`:
+   **https://mudae-timer.angelgonzmor-sketch.deno.net**.
+
+   > Si la app anterior quedo **suspendida por limites de uso** la app nueva vive en
+   > el mismo org y plan gratuito: revisa en la consola el panel de usage para saber
+   > que consumio el limite (el cron `mudae-scan` invoca la app cada minuto) antes de
+   > pedir una segunda reinstalacion.
 
 5. Despues del despliegue, en cada dispositivo: abre la nueva URL y vuelve a
    **Activar notificaciones** (el permiso se concede por URL). La sincronizacion es
