@@ -435,6 +435,13 @@
     return s;
   }
 
+  function lockBtn(b, label) {
+    b.disabled = true;
+    b.className = 'btn-lock';
+    b.title = 'Ciclo bloqueado: cambia el modo a "Una vez" para habilitarlo';
+    b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a5 5 0 0 0-5 5v2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-2 7V7a2 2 0 0 1 4 0v2h-4zm2 4a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0v-2a1 1 0 0 1 1-1z"/></svg>' + label;
+  }
+
   function card(t) {
     var cat = CAT_BY_KEY[t.cat];
     var el = document.createElement('div');
@@ -468,13 +475,16 @@
     el.appendChild(meta);
 
     var actions = document.createElement('div'); actions.className = 'actions';
+    var locked = t.mode === 'repeat';
     var btnRestart = document.createElement('button');
     btnRestart.textContent = 'Reiniciar';
-    btnRestart.onclick = function (e) { e.stopPropagation(); restartTimer(t, t.intervalMs || 3600000); };
+    if (locked) lockBtn(btnRestart, 'Reiniciar');
+    else btnRestart.onclick = function (e) { e.stopPropagation(); restartTimer(t, t.intervalMs || 3600000); };
     actions.appendChild(btnRestart);
     var btnClaim = document.createElement('button');
     btnClaim.textContent = 'Reclamar';
-    btnClaim.onclick = function (e) {
+    if (locked) lockBtn(btnClaim, 'Reclamar');
+    else btnClaim.onclick = function (e) {
       e.stopPropagation();
       t.count = 0;
       t.ts = Date.now();

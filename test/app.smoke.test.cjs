@@ -393,10 +393,25 @@ test('frontend: contador del badge (Reclamar/Reiniciar/catch-up)', () => {
     const saved1 = JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers[0];
     assert.equal(saved1.count, 1, 'el contador persistido suma 1');
 
-    // Reiniciar: reinicia el countdown pero NO toca el contador
+    // Ciclo: Reiniciar/Reclamar quedan bloqueados con candado hasta pasar a "Una vez"
     const btnRestart = buttonIn(card(), 'Reiniciar');
     assert.ok(btnRestart, 'existe el boton Reiniciar');
-    btnRestart.onclick({ stopPropagation() {} });
+    assert.equal(btnRestart.disabled, true, 'en ciclo Reiniciar esta bloqueado');
+    assert.ok(!btnRestart.onclick, 'bloqueado no dispara nada');
+    assert.ok(String(btnRestart.className).includes('btn-lock'), 'lleva candado (btn-lock)');
+    const lockedClaim = buttonIn(card(), 'Reclamar');
+    assert.equal(lockedClaim.disabled, true, 'en ciclo Reclamar tambien esta bloqueado');
+    assert.ok(!lockedClaim.onclick, 'Reclamar bloqueado no dispara nada');
+
+    // Desbloqueo: cambiar el modo de ciclo a "Una vez"
+    const btnOnce = buttonIn(card(), 'Una vez');
+    assert.ok(btnOnce, 'el ciclo ofrece el boton Una vez');
+    btnOnce.onclick({ stopPropagation() {} });
+
+    // Reiniciar: reinicia el countdown pero NO toca el contador
+    const newRestart = buttonIn(card(), 'Reiniciar');
+    assert.equal(!!newRestart.disabled, false, 'tras pasar a Una vez Reiniciar queda habilitado');
+    newRestart.onclick({ stopPropagation() {} });
     const saved2 = JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers[0];
     assert.equal(saved2.count, 1, 'Reiniciar conserva el contador');
     assert.ok(saved2.endAt > Date.now(), 'Reiniciar reprograma a futuro');
