@@ -13,8 +13,8 @@ self.addEventListener('push', function (event) {
   var title = data.title || 'Mudae Timer';
   var options = {
     body: data.body || '',
-    icon: '/icon.svg',
-    badge: '/icon.svg',
+    icon: 'icon.svg',
+    badge: 'icon.svg',
     tag: data.tag || '',
     vibrate: [200, 100, 200]
   };
@@ -27,7 +27,7 @@ self.addEventListener('notificationclick', function (event) {
       for (var i = 0; i < list.length; i++) {
         if ('focus' in list[i]) return list[i].focus();
       }
-      if (self.clients.openWindow) return self.clients.openWindow('/');
+      if (self.clients.openWindow) return self.clients.openWindow('./');
     })
   );
 });

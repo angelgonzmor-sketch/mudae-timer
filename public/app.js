@@ -162,7 +162,7 @@
 
   function localNotify(title, body, tag) {
     if ('Notification' in window && Notification.permission === 'granted') {
-      try { new Notification(title, { body: body, tag: tag || '', icon: '/icon.svg' }); } catch (e) {}
+      try { new Notification(title, { body: body, tag: tag || '', icon: 'icon.svg' }); } catch (e) {}
     }
     beep();
     flashNotice(body ? title + ': ' + body : title);

@@ -38,7 +38,26 @@ Abre `http://localhost:3000`. Funciona la UI, el pegado de `$tu` y los avisos co
 mientras el navegador este abierto. Para avisos con la app cerrada necesitas desplegar
 (el push requiere HTTPS + backend).
 
-## Desplegar en Deno Deploy (plan gratis) — despliegue actual
+## Desplegar en GitHub Pages (estatico, sin push) — despliegue actual
+
+Version gratuita y sin suspenderse (igual que el "Gestor de Horarios"): solo sirve
+archivos estaticos.
+
+```
+https://angelgonzmor-sketch.github.io/mudae-timer/
+```
+
+- **Funciona**: UI completa, pegar `$tu`, contadores, avisos en pantalla y sonido mientras
+  la app este abierta, y la **sincronizacion MantleDB** entre dispositivos.
+- **No funciona**: notificaciones push con la app cerrada ni el cron (necesitan un backend;
+  en esta version el boton "Activar notificaciones" no hace nada).
+- Requisitos (una vez): repo **publico** (Settings > Danger Zone > Make public) y Pages con
+  **Source: GitHub Actions** (Settings > Pages). El workflow `.github/workflows/pages.yml`
+  publica `public/` como raiz en cada push a `main`.
+- Comparte repo con el despliegue Deno: el mismo `git push` los refresca (Pages solo usa
+  `public/`).
+
+## Desplegar en Deno Deploy (plan gratis) — alternativa con push
 
 Sustituye a Cloudflare: sin limites practicos de escritura en KV (1M requests/mes,
 1M lecturas + 500K escrituras/mes en KV, 1 GiB de KV, 20 GiB de salida; gratuito,
