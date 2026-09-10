@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Diag Mudae Timer</title>
+</head>
+<body style="font-family:system-ui,sans-serif;padding:16px;max-width:640px">
+<h2>Sincronizacion - diagnostico</h2>
+<pre id="out" style="white-space:pre-wrap;background:#f4f4f4;padding:12px;border-radius:8px">Cargando...</pre>
+<script>
+var out = document.getElementById('out');
+function add(s) { out.textContent += s + '\n'; }
+function fmt(ts) { var d = new Date(ts); return ts + ' (' + d.toLocaleString() + ')'; }
+async function run() {
+  add('URL = ' + location.href);
+  add('navigator.onLine = ' + navigator.onLine);
+  add('mudaeSyncTs = ' + localStorage.getItem('mudaeSyncTs'));
+  var raw = localStorage.getItem('mudaeTimer.v1');
+  if (!raw) raw = localStorage.getItem('mudaeTimer');
+  try {
+    var o = JSON.parse(raw);
+    var p = o.profiles && o.profiles[0];
+    add('localData = ' + ((p && p.timers) ? p.timers.length + ' timers' : 'sin datos'));
+  } catch (e) { add('localData err = ' + e.message); }
+  try {
+    var t0 = Date.now();
+    var r = await fetch('https://mantledb.sh/v2/mudae-timer-sync-8xzP4QmK3c/estado', { cache: 'no-store' });
+    var j = await r.json();
+    add('HTTP ' + r.status + ' en ' + (Date.now() - t0) + 'ms');
+    add('blob guardadoEn = ' + fmt(j.guardadoEn));
+    var n = 0;
+    (j.profiles || []).forEach(function (q) { n += (q.timers || []).length; });
+    add('blob timers totales = ' + n);
+  } catch (e) { add('fetch BLOB ERROR = ' + e.message); }
+}
+run();
+</script>
+</body>
+</html>
