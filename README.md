@@ -74,9 +74,9 @@ sin tarjeta, sin auto-cobro).
    **https://mudae-timer-hddj4r2c765f.angelgonzmor-sketch.deno.net**.
    Con app renombrada a slug `mudae-timer` (Settings de la app): **https://mudae-timer.angelgonzmor-sketch.deno.net**.
 
-5. Despues del despliegue, en cada dispositivo: abre la nueva URL, vuelve a
-   **Activar notificaciones** (el permiso se concede por URL) y, si usabas
-   sincronizacion, vuelve a introducir el syncCode en **Sincronizar > Unirme**.
+5. Despues del despliegue, en cada dispositivo: abre la nueva URL y vuelve a
+   **Activar notificaciones** (el permiso se concede por URL). La sincronizacion es
+   automatica, sin codigos.
 
 ### KV y migracion
 
@@ -87,8 +87,13 @@ organizacion, **Databases > Provision Database** (engine Deno KV, nombre
 usa automaticamente con `Deno.openKv()` (una base por timeline: prod/preview).
 
 Hoy el KV de Cloudflare esta **vacio**: los temporizadores viven en el localStorage
-de cada dispositivo, asi que no hay datos que migrar (solo hay que re-parejar cada
-dispositivo con la nueva URL). Si algun dia el KV de CF volviera a tener datos:
+de cada dispositivo. Como el localStorage es por URL, los temporizadores que tenias
+en la antigua URL de Cloudflare (`mudae-timer.mudae-timer.workers.dev`) **no se
+trasladan solos**: vuelve a anadirlos en la nueva URL o copialos desde la consola
+(`Aplicacion > Local Storage`). A partir de entonces la sincronizacion entre
+dispositivos (MantleDB) los mantiene iguales en todas partes.
+
+Si algun dia el KV de CF volviera a tener datos:
 
 ```bash
 node tools/export-cf-kv.mjs          # vuelca CF KV -> export/kv.json (+ syncCodes)
@@ -167,31 +172,40 @@ del primer ciclo es la que venia del `$tu` o la que se anadio a mano. Al elegir 
 Los temporizadores viejos de `$mk` y `$Rolls` se funden automaticamente en uno solo
 (`$rolls y $mk`) la primera vez que se abre la app tras esta actualizacion.
 
-Los datos se guardan solo en tu dispositivo (localStorage). Los perfiles sirven para jugar
+Los datos se guardan en tu dispositivo (localStorage) y ademas se respaldan en una
+clave publica de MantleDB para que entre tus dispositivos compartan la ultima version
+(ver "Sincronizar varios dispositivos"). Los perfiles sirven para jugar
 en varios servidores con timers distintos.
 
 ## Sincronizar varios dispositivos
 
-Con la sincronizacion, todos tus dispositivos comparten los mismos temporizadores y entre todos
-reparten los avisos (fan-out): basta que uno este abierto o reciba el push para que llegue a todos.
+La sincronizacion es **automatica y sin codigos**: el estado completo (perfiles y
+temporizadores) se guarda en una clave publica de MantleDB
+(`https://mantledb.sh/v2/mudae-timer-sync-8xzP4QmK3c/estado`) y todos tus
+dispositivos comparten la ultima version guardada.
 
-1. En tu dispositivo principal: **Sincronizar > Crear cuenta**. Se genera un codigo tipo `MT-XXXX-XXXX`.
-2. En cada dispositivo extra: **Sincronizar > (codigo) > Unirme**. Se copian los temporizadores al instante.
-3. La app se sincroniza sola cada ~60 segundos, al abrirla y al volver a primer plano. Tambien
-   puedes crear el codigo en otro dispositivo y unirte desde el primero.
+- Elige con el **desplegable de perfiles** cual quieres usar en cada dispositivo; cada
+  dispositivo tiene su propia sesion activa (no se sincroniza).
+- Cada cambio (anadir, reiniciar, listo, eliminar) se sube automaticamente ~1.2 s
+  despues (con debounce). Al abrir la app, cada 30 s y al volver a primer plano se
+  descarga la ultima version.
+  Al salir/recargar con cambios pendientes se intenta una ultima subida (keepalive).
+- Si dos dispositivos guardan a la vez, gana la version con el guardado mas reciente:
+  se adopta el estado completo del dispositivo que guardo despues (last-write-wins
+  global, como en "Horarios").
+- En segundo plano no hay llamadas de red (ahorro de bateria); los cambios de otros
+  dispositivos se recogen al volver a la app.
 
-> La sincronizacion **no requiere** activar notificaciones: puedes crear la cuenta o unirte
-> aunque el push este bloqueado en ese navegador. El push es opcional en cada dispositivo:
-> sin el, la app recibe los cambios por polling mientras esta abierta; con el, ademas le
-> llegan los avisos con la app cerrada. Cada dispositivo tiene una identidad persistente que
-> se guarda en su navegador (localStorage).
+> Nota: el indicador junto al boton Sincronizar muestra el estado: ✓ Sincronizado,
+> ⇅ Subiendo… o ⚠ Sin conexion. El boton "Forzar sincronizacion" sube los cambios de
+> inmediato.
 
-Reglas:
+> Privacidad: la clave MantleDB es un slug aleatorio no publicitado, sin autenticacion
+> (asi funciona MantleDB). Quien conozca el slug podria leer o sobrescribir el estado.
+> No uses esta copia para datos sensibles; es un respaldo de tus temporizadores.
 
-- Cualquier cambio (anadir, reiniciar, listo, eliminar) se propaga a los demas dispositivos.
-- Si dos dispositivos cambian lo mismo a la vez, gana el cambio mas reciente (last-write-wins).
-- Los avisos de una cuenta sincronizada los programa el backend (el cron avisa a todos).
-- Salir de la sincronizacion mantiene los timers locales actuales, pero deja de compartirlos.
+Las notificaciones siguen siendo por dispositivo: cada navegador pide su propio permiso
+y el push backend avisa aunque la app este cerrada.
 
 ## Bajo consumo en segundo plano
 

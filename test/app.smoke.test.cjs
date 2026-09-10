@@ -78,7 +78,7 @@ function makeDoc() {
   const ids = ['timers', 'profileName', 'profileSel', 'addProfile', 'delProfile', 'addBtn',
     'pasteBtn', 'pushBtn', 'addCat', 'presets', 'addTime', 'addLabel', 'addWarn', 'addWarnTime',
     'addSave', 'pasteText', 'pasteDetect', 'taCopy', 'taCopyBtn', 'pasteResults', 'pasteAdd',
-    'addModal', 'pasteModal'];
+    'addModal', 'pasteModal', 'syncModal', 'syncBtn', 'sync-status', 'syncForce', 'syncHint', 'syncStatusText'];
   const els = {};
   for (const id of ids) els[id] = createEl('div');
   els.addTime.value = ''; els.addTime.tag = 'input'; els.addTime.type = 'text';
@@ -110,6 +110,11 @@ function makeDoc() {
 }
 
 function bootApp(store) {
+  const fetchCalls = [];
+  const sFetch = (url, opts) => {
+    fetchCalls.push({ url: String(url), opts: opts || {} });
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+  };
   const globals = {
     localStorage: {
       _d: Object.assign({}, store || {}),
@@ -122,13 +127,13 @@ function bootApp(store) {
 
   const doc = makeDoc();
   const context = {
-    window: { MudaeParse: parse, AudioContext: undefined, fetch, Notification: globals.Notification },
+    window: { MudaeParse: parse, AudioContext: undefined, fetch: sFetch, Notification: globals.Notification },
     document: doc,
     navigator: {},
     location: { protocol: 'http:', search: '', hash: '' },
     localStorage: globals.localStorage,
     Notification: globals.Notification,
-    fetch,
+    fetch: sFetch,
     setTimeout,
     confirm: () => true,
     prompt: () => null,
@@ -152,9 +157,9 @@ function bootApp(store) {
   const fn = new Function('window', 'document', 'navigator', 'location', 'localStorage',
     'Notification', 'fetch', 'setTimeout', 'confirm', 'prompt', 'alert', 'AudioContext', src);
   fn(context.window, doc, context.navigator, context.location, globals.localStorage,
-    globals.Notification, global.fetch, global.setTimeout, context.confirm, context.prompt, context.alert, undefined);
+    globals.Notification, sFetch, global.setTimeout, context.confirm, context.prompt, context.alert, undefined);
 
-  return { globals, doc, context, onReady, listeners };
+  return { globals, doc, context, onReady, listeners, fetchCalls };
 }
 
 function withTicks(fn) {
@@ -168,7 +173,7 @@ function withTicks(fn) {
 }
 
 test('frontend: init sin crashear + anadir temporizador + render', () => {
-  const { globals, doc, onReady, listeners } = bootApp({});
+  const { globals, doc, onReady, listeners, fetchCalls } = bootApp({});
   assert.equal(typeof onReady, 'function', 'debe registrar DOMContentLoaded');
   withTicks((intervals) => {
     onReady();
@@ -179,6 +184,13 @@ test('frontend: init sin crashear + anadir temporizador + render', () => {
 
     // barra de perfiles: ya hay un perfil por defecto
     assert.ok(doc.getElementById('profileSel').children.length >= 1);
+
+    // sincronizacion: poll cada 30s y botones del modal cableados
+    const poll30 = intervals.find(i => i.ms === 30000);
+    assert.ok(poll30 && typeof poll30.fn === 'function', 'debe existir el poll de sync (30s)');
+    assert.equal(typeof doc.getElementById('syncBtn').onclick, 'function', 'el boton Sincronizar abre el modal');
+    assert.equal(typeof doc.getElementById('syncForce').onclick, 'function', 'Forzar sincronizacion cableado');
+    assert.ok(doc.getElementById('sync-status'), 'existe el indicador de estado de sync');
 
     // deviceId estable se genera y persiste aun sin notificaciones
     const devId = globals.localStorage._d['mudaeDeviceId'];
@@ -324,6 +336,9 @@ test('frontend: init sin crashear + anadir temporizador + render', () => {
     // pulsar "Activar notificaciones" con permiso denegado no rompe nada ni cambia el id
     doc.getElementById('pushBtn').onclick();
     assert.equal(globals.localStorage._d['mudaeDeviceId'], devId, 'el deviceId estable no cambia');
+
+    // sin conexion (navigator sin onLine): el sync no toca la red
+    assert.equal(fetchCalls.length, 0, 'mientras no haya navigator.onLine no hay llamadas de sync');
 
     // --- migracion: $mk + $Rolls viejos se funden en uno solo "$rolls y $mk" ---
     const t0 = Date.now();

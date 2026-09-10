@@ -86,6 +86,7 @@
   .group-title .n { color: var(--acc); font-variant-numeric: tabular-nums; }
   .group .timer:last-child { margin-bottom: 4px; }
   footer { color: var(--mut); font-size: 12px; margin-top: 26px; text-align: center; }
+  .sync-status { color: var(--mut); font-size: 12px; }
 
   .modal {
     position: fixed; inset: 0; background: rgba(0,0,0,.6);
@@ -121,6 +122,7 @@
     <button id="addBtn">Anadir tiempo</button>
     <button id="pushBtn">Activar notificaciones</button>
     <button id="syncBtn">Sincronizar</button>
+    <span id="sync-status" class="sync-status"></span>
   </header>
 
   <div class="probar">
@@ -185,23 +187,9 @@
   <div class="modalbox">
     <h2>Sincronizar dispositivos</h2>
     <p style="margin:6px 0" id="syncHint"></p>
-    <div id="syncCodeBox" style="display:none">
-      <label for="syncCodeView">Codigo compartido</label>
-      <div class="row" style="align-items:center">
-        <input type="text" id="syncCodeView" readonly style="font-family:ui-monospace,Consolas,monospace;text-transform:uppercase">
-        <button id="syncCopy" style="flex:0 0 auto">Copiar</button>
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <button id="syncCreate" class="primary" style="flex:1">Crear cuenta</button>
-      <button id="syncLeave" class="ghost danger" style="display:none;flex:1">Salir de la sincronizacion</button>
-    </div>
-    <label for="syncJoinCode" style="margin-top:12px">Codigo de otra persona/dispositivo</label>
-    <div class="row" style="align-items:center">
-      <input type="text" id="syncJoinCode" placeholder="MT-XXXX-XXXX">
-      <button id="syncJoin" style="flex:0 0 auto">Unirme</button>
-    </div>
+    <p id="syncStatusText" class="chip"></p>
     <div class="modal-actions">
+      <button id="syncForce" class="primary">Forzar sincronizacion</button>
       <button data-close="syncModal" class="ghost">Cerrar</button>
     </div>
   </div>

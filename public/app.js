@@ -24,7 +24,7 @@
 
   function defaultState() {
     return {
-      profiles: [{ id: 'p1', name: 'Mi servidor', timers: [], syncCode: null, syncSeq: 0, pendingOps: [] }],
+      profiles: [{ id: 'p1', name: 'Mi servidor', timers: [] }],
       active: 'p1'
     };
   }
@@ -54,10 +54,8 @@
     prof.timers.push(t);
     olds.forEach(function (x) {
       if (deviceId && pushActive) api('POST', '/cancel', { deviceId: deviceId, timerId: x.id });
-      queueOp({ op: 'delete', id: x.id, ts: now });
     });
     syncRemote(t);
-    queueOp(timerOp(t));
   }
 
   function loadState() {
@@ -65,6 +63,7 @@
   }
   function save() {
     localStorage.setItem(LS_KEY, JSON.stringify(state));
+    scheduleSync(false);
   }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
   function activeProfile() {
@@ -94,7 +93,6 @@
     t.warnSent = false;
     t.ts = Date.now();
     syncRemote(t);
-    queueOp(timerOp(t));
     save();
     render();
   }
@@ -115,7 +113,6 @@
     t.warnSent = false;
     t.ts = Date.now();
     syncRemote(t);
-    queueOp(timerOp(t));
     save();
     render();
   }
@@ -184,7 +181,6 @@
 
   function syncRemote(t) {
     if (!deviceId || !pushActive) return;
-    if (activeProfile().syncCode) return;
     var base = { deviceId: deviceId, timerId: t.id };
     if (t.done) { api('POST', '/cancel', base); return; }
     var pl = {
@@ -234,141 +230,108 @@
     pushOK = ok;
   }
 
-  // ---------- Sincronizacion entre dispositivos ----------
-  function timerOp(t) {
-    return Object.assign({ op: 'upsert', ts: t.ts }, t);
+  // ---------- Sincronizacion entre dispositivos (MantleDB, como "Horarios") ----------
+  var SYNC_URL = 'https://mantledb.sh/v2/mudae-timer-sync-8xzP4QmK3c/estado';
+  var SYNC_DELAY_MS = 1200;
+  var syncTs = parseInt(localStorage.getItem('mudaeSyncTs') || '0', 10) || 0;
+  var syncTimer = null, syncRetries = 0, syncPending = false;
+
+  function setSyncStatus(txt) {
+    var el = document.getElementById('sync-status');
+    if (el) el.textContent = txt;
   }
-  function queueOp(op) {
-    var prof = activeProfile();
-    if (!prof.syncCode) return;
-    prof.pendingOps = prof.pendingOps || [];
-    prof.pendingOps.push(op);
-    save();
-    kickSync();
-  }
-  function applyRemoteOp(prof, op) {
-    if (!op || !op.id) return false;
-    var idx = prof.timers.findIndex(function (t) { return t.id === op.id; });
-    var cur = idx >= 0 ? prof.timers[idx] : null;
-    if (op.op === 'delete') {
-      if (!cur || (cur.ts || 0) <= (op.ts || 0)) { if (idx >= 0) prof.timers.splice(idx, 1); return idx >= 0; }
-      return false;
-    }
-    if (cur && (cur.ts || 0) > (op.ts || 0)) return false;
-    var t = {
-      id: op.id, cat: op.cat || 'custom', label: op.label || 'Tiempo', mode: op.mode || 'once',
-      intervalMs: Number(op.intervalMs) || 0, startAt: Number(op.startAt) || 0, endAt: Number(op.endAt) || 0,
-      warnMs: op.warnMs ? Number(op.warnMs) : null, warnSent: false, done: !!op.done, count: Number(op.count) || 0, ts: Number(op.ts) || 0
-    };
-    if (idx >= 0) prof.timers[idx] = t; else prof.timers.push(t);
-    return true;
-  }
-  var kickTimer = null;
-  function kickSync() {
-    if (kickTimer) return;
-    kickTimer = setTimeout(function () { kickTimer = null; syncLoop(); }, 600);
-  }
-  async function syncLoop() {
-    var prof = activeProfile();
-    if (!prof || !prof.syncCode || !deviceId) return;
-    if (typeof navigator === 'undefined' || navigator.onLine === false) return;
-    if (isHidden()) return;
-    try {
-      var since = prof.syncSeq || 0;
-      var r = await fetch(API + '/sync/since?code=' + encodeURIComponent(prof.syncCode) + '&since=' + since);
-      if (r && r.ok) {
-        var j = await r.json();
-        var applied = false;
-        (j.ops || []).forEach(function (op) { if (applyRemoteOp(prof, op)) applied = true; });
-        if (j.since != null && j.since >= since) prof.syncSeq = j.since;
-        if (applied) { save(); render(); }
-      }
-      if (prof.pendingOps && prof.pendingOps.length) {
-        var r2 = await fetch(API + '/sync/ops', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code: prof.syncCode, ops: prof.pendingOps })
-        });
-        if (r2 && r2.ok) {
-          var j2 = await r2.json();
-          if (j2.since != null && j2.since > (prof.syncSeq || 0)) prof.syncSeq = j2.since;
-          prof.pendingOps = [];
-          save();
-        }
-      }
-    } catch (e) {}
+  function onlineOk() {
+    return typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean' && navigator.onLine;
   }
 
-  // Poll moderado: en segundo plano no hay red (ahorro de bateria).
-  var pollId = null;
-  function pauseSync() {
-    if (pollId) { clearInterval(pollId); pollId = null; }
+  // Serializa solo los datos de usuario (sin campos internos del sync antiguo).
+  function blobForSync() {
+    return state.profiles.map(function (p) {
+      return {
+        id: p.id, name: p.name,
+        timers: (p.timers || []).map(function (t) {
+          return {
+            id: t.id, cat: t.cat, label: t.label, mode: t.mode,
+            intervalMs: t.intervalMs, startAt: t.startAt, endAt: t.endAt,
+            warnMs: t.warnMs, warnSent: t.warnSent, done: t.done, count: t.count, ts: t.ts
+          };
+        })
+      };
+    });
   }
-  function resumeSync() {
-    if (!pollId) pollId = setInterval(syncLoop, 60000);
+
+  function scheduleSync(immediate) {
+    syncPending = true;
+    clearTimeout(syncTimer);
+    setSyncStatus('⇅ Subiendo…');
+    syncTimer = setTimeout(function () { pushState(); }, immediate ? 200 : SYNC_DELAY_MS);
+  }
+
+  async function pushState() {
+    if (!onlineOk()) { setSyncStatus('⚠ Sin conexión'); return; }
+    try {
+      var guardadoEn = Date.now();
+      var r = await fetch(SYNC_URL, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guardadoEn: guardadoEn, profiles: blobForSync() })
+      });
+      if (!r.ok) throw new Error(String(r.status));
+      syncTs = guardadoEn;
+      syncRetries = 0;
+      syncPending = false;
+      try { localStorage.setItem('mudaeSyncTs', String(syncTs)); } catch (e) {}
+      setSyncStatus('✓ Sincronizado');
+    } catch (e) {
+      syncRetries++;
+      setSyncStatus('⚠ Sin conexión');
+      if (syncRetries <= 3) syncTimer = setTimeout(function () { scheduleSync(true); }, 8000);
+    }
+  }
+
+  async function pullSync() {
+    if (!onlineOk()) return;
+    try {
+      var r = await fetch(SYNC_URL, { cache: 'no-store' });
+      if (!r.ok) throw new Error(String(r.status));
+      var remoto = await r.json();
+      var tsRemote = (remoto && remoto.guardadoEn) || 0;
+      if (tsRemote > syncTs && remoto.profiles) {
+        adoptRemote(remoto.profiles, tsRemote);
+        setSyncStatus('✓ Sincronizado');
+      } else if (syncPending || tsRemote < syncTs) {
+        scheduleSync(true);
+      } else {
+        setSyncStatus('✓ Sincronizado');
+      }
+    } catch (e) {
+      if (syncTs === 0 && !localStorage.getItem(LS_KEY)) return;
+      if (syncTs === 0) scheduleSync(true);
+      else setSyncStatus('');
+    }
+  }
+
+  function adoptRemote(profiles, tsRemote) {
+    state.profiles = profiles;
+    try { localStorage.setItem('mudaeSyncTs', String(tsRemote)); } catch (e) {}
+    syncTs = tsRemote;
+    syncPending = false;
+    state.profiles.forEach(function (p) { (p.timers || []).forEach(advanceCatchUp); });
+    save();
+    render();
+    if (pushActive) activeProfile().timers.forEach(syncRemote);
   }
 
   function initSync() {
-    document.getElementById('syncBtn').onclick = function () { openModal('syncModal'); };
-    document.getElementById('syncCreate').onclick = async function () {
-      var prof = activeProfile();
-      var res = await api('POST', '/sync/create', { deviceId: deviceId });
-      if (!res || !res.code) { flashNotice('No se pudo crear el codigo.'); return; }
-      prof.syncCode = res.code;
-      prof.syncSeq = 0;
-      prof.pendingOps = (prof.timers || []).map(timerOp);
-      save(); render();
-      refreshSyncModal();
-      kickSync();
-    };
-    document.getElementById('syncJoin').onclick = async function () {
-      var prof = activeProfile();
-      var code = document.getElementById('syncJoinCode').value.trim();
-      if (!code) return;
-      var res = await api('POST', '/sync/join', { deviceId: deviceId, code: code });
-      if (!res || !res.code) { flashNotice('Codigo no valido o error del servidor.'); return; }
-      prof.syncCode = res.code;
-      prof.syncSeq = res.since || 0;
-      prof.pendingOps = [];
-      prof.timers = (res.timers || []).map(function (t) { return Object.assign({}, t, { warnSent: false }); });
-      prof.timers.forEach(advanceCatchUp);
-      save(); render();
-      refreshSyncModal();
-      flashNotice('Perfil sincronizado con ' + res.code + '.');
-    };
-    document.getElementById('syncLeave').onclick = function () {
-      var prof = activeProfile();
-      prof.syncCode = null;
-      prof.syncSeq = 0;
-      prof.pendingOps = [];
-      save(); render();
-      refreshSyncModal();
-    };
-    document.getElementById('syncCopy').onclick = function () {
-      var code = document.getElementById('syncCodeView').value;
-      if (!code) return;
-      if (navigator.clipboard) navigator.clipboard.writeText(code);
-      flashNotice('Codigo copiado.');
-    };
+    document.getElementById('syncBtn').onclick = function () { openModal('syncModal'); showSyncModal(); };
+    document.getElementById('syncForce').onclick = function () { scheduleSync(true); };
+    setSyncStatus(syncTs ? '✓ Sincronizado' : '');
   }
-  function refreshSyncModal() {
-    var prof = activeProfile();
-    var codeView = document.getElementById('syncCodeView');
-    if (codeView) codeView.value = prof.syncCode || '';
-    var createBtn = document.getElementById('syncCreate');
-    var joinBtn = document.getElementById('syncJoin');
-    var leaveBtn = document.getElementById('syncLeave');
-    var copyBtn = document.getElementById('syncCopy');
-    var joined = !!prof.syncCode;
-    createBtn.style.display = joined ? 'none' : 'inline-block';
-    joinBtn.style.display = joined ? 'none' : 'inline-block';
-    leaveBtn.style.display = joined ? 'inline-block' : 'none';
-    copyBtn.style.display = joined ? 'inline-block' : 'none';
-    var box = document.getElementById('syncCodeBox');
-    if (box) box.style.display = joined ? 'block' : 'none';
+  function showSyncModal() {
+    var st = document.getElementById('syncStatusText');
+    if (st) st.textContent = document.getElementById('sync-status').textContent || 'Aun no sincronizado';
     var hint = document.getElementById('syncHint');
-    if (hint) hint.textContent = joined
-      ? 'Un dispositivo usa "Unirme con codigo" y el resto recibira los avisos.'
-      : 'Crea una cuenta compartida o unete a una existente con el mismo codigo.';
+    if (hint) hint.textContent = 'Elige con el desplegable de arriba el perfil que quieres usar en este dispositivo. '
+      + 'Cada cambio se sube solo y al abrir la app se descarga la ultima version guardada.';
   }
 
   // ---------- Persistencia + render ----------
@@ -465,7 +428,6 @@
       t.count = 0;
       t.ts = Date.now();
       syncRemote(t);
-      queueOp(timerOp(t));
       save();
       render();
     };
@@ -490,7 +452,6 @@
         t.warnSent = true;
         t.ts = Date.now();
         syncRemote(t);
-        queueOp(timerOp(t));
         save(); render();
       };
       actions.appendChild(btnDone);
@@ -501,7 +462,6 @@
     btnDel.onclick = function (e) {
       e.stopPropagation();
       activeProfile().timers = activeProfile().timers.filter(function (x) { return x.id !== t.id; });
-      queueOp({ op: 'delete', id: t.id, ts: Date.now() });
       if (deviceId) api('POST', '/cancel', { deviceId: deviceId, timerId: t.id });
       save(); render();
     };
@@ -529,7 +489,6 @@
     };
     activeProfile().timers.push(t);
     syncRemote(t);
-    queueOp(timerOp(t));
     save();
     render();
   }
@@ -647,7 +606,7 @@
     document.getElementById('addProfile').onclick = function () {
       var name = prompt('Nombre del servidor/perfil:');
       if (!name) return;
-      var p = { id: uid(), name: name, timers: [], syncCode: null, syncSeq: 0, pendingOps: [] };
+      var p = { id: uid(), name: name, timers: [] };
       state.profiles.push(p);
       state.active = p.id;
       save(); render();
@@ -690,7 +649,6 @@
           t.warnSent = false;
           t.ts = Date.now();
           syncRemote(t);
-          queueOp(timerOp(t));
         } else if (t.mode === 'repeat') {
           t.startAt = t.endAt;
           t.endAt = t.endAt + t.intervalMs;
@@ -698,12 +656,10 @@
           t.warnSent = false;
           t.ts = Date.now();
           syncRemote(t);
-          queueOp(timerOp(t));
         } else {
           t.done = true;
           t.ts = Date.now();
           syncRemote(t);
-          queueOp(timerOp(t));
         }
         localNotify(t.label, 'El comando ya está disponible.', t.id);
         changed = true;
@@ -769,25 +725,31 @@
     save(); render();
     setPushStatus(false, pushActive ? 'conectado al backend' : 'no conectado (activa push)');
     if (deviceId && location.protocol === 'https:') setupPush();
-    refreshSyncModal();
     setInterval(tick, 1000);
-    resumeSync();
+    setInterval(pullSync, 30000);
     if (typeof addEventListener === 'function') {
-      addEventListener('online', function () { syncLoop(); });
+      addEventListener('online', function () { pullSync(); });
     }
     if (typeof window !== 'undefined' && window.addEventListener) {
       window.addEventListener('pointerdown', unlockAudio, { once: true });
       window.addEventListener('keydown', unlockAudio, { once: true });
+      window.addEventListener('beforeunload', function () {
+        if (syncPending) {
+          try {
+            fetch(SYNC_URL, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ guardadoEn: Date.now(), profiles: blobForSync() }), keepalive: true
+            });
+          } catch (e) {}
+        }
+      });
     }
     if (typeof document !== 'undefined' && document.addEventListener) {
       document.addEventListener('visibilitychange', function () {
-        if (document.hidden === true) {
-          pauseSync();
-        } else {
-          resumeSync();
+        if (document.hidden !== true) {
           activeProfile().timers.forEach(advanceCatchUp);
           save(); render();
-          syncLoop();
+          pullSync();
           if (deviceId && 'Notification' in window && Notification.permission === 'granted' && !pushActive) {
             setupPush();
           }
@@ -797,6 +759,7 @@
     if ('serviceWorker' in navigator && location.protocol === 'https:') {
       navigator.serviceWorker.register('sw.js').catch(function () {});
     }
+    pullSync();
   }
 
   document.addEventListener('DOMContentLoaded', init);
