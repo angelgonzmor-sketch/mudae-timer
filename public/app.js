@@ -483,8 +483,7 @@
     actions.appendChild(btnRestart);
     var btnClaim = document.createElement('button');
     btnClaim.textContent = 'Reclamar';
-    if (locked) lockBtn(btnClaim, 'Reclamar');
-    else btnClaim.onclick = function (e) {
+    btnClaim.onclick = function (e) {
       e.stopPropagation();
       t.count = 0;
       t.ts = Date.now();

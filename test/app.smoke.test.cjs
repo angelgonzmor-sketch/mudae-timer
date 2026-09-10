@@ -393,15 +393,23 @@ test('frontend: contador del badge (Reclamar/Reiniciar/catch-up)', () => {
     const saved1 = JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers[0];
     assert.equal(saved1.count, 1, 'el contador persistido suma 1');
 
-    // Ciclo: Reiniciar/Reclamar quedan bloqueados con candado hasta pasar a "Una vez"
+    // Ciclo: Reiniciar queda bloqueado con candado; Reclamar sigue habilitado
     const btnRestart = buttonIn(card(), 'Reiniciar');
     assert.ok(btnRestart, 'existe el boton Reiniciar');
     assert.equal(btnRestart.disabled, true, 'en ciclo Reiniciar esta bloqueado');
     assert.ok(!btnRestart.onclick, 'bloqueado no dispara nada');
     assert.ok(String(btnRestart.className).includes('btn-lock'), 'lleva candado (btn-lock)');
-    const lockedClaim = buttonIn(card(), 'Reclamar');
-    assert.equal(lockedClaim.disabled, true, 'en ciclo Reclamar tambien esta bloqueado');
-    assert.ok(!lockedClaim.onclick, 'Reclamar bloqueado no dispara nada');
+    const unlockedClaim = buttonIn(card(), 'Reclamar');
+    assert.equal(!!unlockedClaim.disabled, false, 'en ciclo Reclamar sigue habilitado');
+    assert.equal(typeof unlockedClaim.onclick, 'function', 'Reclamar dispara en ciclo');
+
+    // Reclamar en ciclo: SOLO pone el contador a 0
+    const endBeforeCycleClaim = saved1.endAt;
+    unlockedClaim.onclick({ stopPropagation() {} });
+    const savedClaim = JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers[0];
+    assert.equal(savedClaim.count, 0, 'Reclamar en ciclo pone el contador a 0');
+    assert.equal(savedClaim.endAt, endBeforeCycleClaim, 'Reclamar no toca el countdown');
+    assert.equal(badge(), '0', 'el badge muestra 0 tras Reclamar');
 
     // Desbloqueo: cambiar el modo de ciclo a "Una vez"
     const btnOnce = buttonIn(card(), 'Una vez');
@@ -413,19 +421,9 @@ test('frontend: contador del badge (Reclamar/Reiniciar/catch-up)', () => {
     assert.equal(!!newRestart.disabled, false, 'tras pasar a Una vez Reiniciar queda habilitado');
     newRestart.onclick({ stopPropagation() {} });
     const saved2 = JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers[0];
-    assert.equal(saved2.count, 1, 'Reiniciar conserva el contador');
+    assert.equal(saved2.count, 0, 'Reiniciar conserva el contador');
     assert.ok(saved2.endAt > Date.now(), 'Reiniciar reprograma a futuro');
-    assert.equal(badge(), '1', 'el badge no cambia al reiniciar');
-
-    // Reclamar: SOLO pone el contador a 0
-    const endBeforeClaim = saved2.endAt;
-    const btnClaim = buttonIn(card(), 'Reclamar');
-    assert.ok(btnClaim, 'existe el boton Reclamar');
-    btnClaim.onclick({ stopPropagation() {} });
-    const saved3 = JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers[0];
-    assert.equal(saved3.count, 0, 'Reclamar pone el contador a 0');
-    assert.equal(saved3.endAt, endBeforeClaim, 'Reclamar no toca el countdown');
-    assert.equal(badge(), '0', 'el badge muestra 0 tras Reclamar');
+    assert.equal(badge(), '0', 'el badge no cambia al reiniciar');
 
     // catch-up: ciclos vencidos mientras la app estaba cerrada
     const overdueEnd = Date.now() - 2.5 * 3600000;
