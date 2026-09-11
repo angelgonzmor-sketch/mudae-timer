@@ -569,10 +569,15 @@
       sel.appendChild(o);
     });
     var o = document.createElement('option');
-    o.value = 'custom'; o.textContent = 'Personalizado';
+    o.value = 'custom'; o.textContent = 'Personalizado (ponle un nombre)';
     sel.appendChild(o);
 
     sel.addEventListener('change', function () {
+      var custom = sel.value === 'custom';
+      var nameIn = document.getElementById('addLabel');
+      document.getElementById('addLabelTitle').textContent = custom ? 'Nombre (obligatorio)' : 'Etiqueta (opcional)';
+      nameIn.placeholder = custom ? 'Escribe el nombre de tu temporizador' : 'Auto según categoría';
+      if (custom) nameIn.focus();
       if (sel.value === 'kakera' && !document.getElementById('addTime').value) {
         document.getElementById('addTime').value = '110.08m';
       }
@@ -588,7 +593,11 @@
         warnMs = MudaeParse.textToMs(document.getElementById('addWarnTime').value) || 300000;
       }
       var customLabel = document.getElementById('addLabel').value.trim();
-      var label = customLabel || (cat === 'custom' ? 'Personalizado' : (CAT_BY_KEY[cat] ? CAT_BY_KEY[cat].day : 'Tiempo'));
+      if (cat === 'custom' && !customLabel) {
+        document.getElementById('addLabel').focus();
+        return;
+      }
+      var label = customLabel || (CAT_BY_KEY[cat] ? CAT_BY_KEY[cat].day : 'Tiempo');
       addTimer({ cat: cat, ms: ms, mode: mode, warnMs: warnMs, label: label });
       closeModal('addModal');
       document.getElementById('addTime').value = '';

@@ -362,6 +362,41 @@ test('frontend: init sin crashear + anadir temporizador + render', () => {
   });
 });
 
+test('frontend: personalizado exige nombre y guarda el nombre elegido', () => {
+  const { globals, doc, onReady } = bootApp({});
+  withTicks(() => {
+    onReady();
+    const timers = doc.getElementById('timers');
+    const saved = () => JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers;
+
+    // sin nombre: no se crea el temporizador
+    doc.getElementById('addCat').value = 'custom';
+    doc.getElementById('addTime').value = '45m';
+    doc.getElementById('addLabel').value = '';
+    doc.getElementById('addSave').onclick();
+    assert.equal(saved().length, 0, 'custom sin nombre no se guarda');
+
+    // con nombre: se crea con ese nombre exacto
+    doc.getElementById('addLabel').value = 'Mi vaca rara';
+    doc.getElementById('addSave').onclick();
+    assert.equal(saved().length, 1, 'custom con nombre se guarda');
+    assert.equal(saved()[0].cat, 'custom', 'categoria custom');
+    assert.equal(saved()[0].label, 'Mi vaca rara', 'usa el nombre elegido, no "Personalizado"');
+    const card = timers.children
+      .flatMap(g => g.children)
+      .find(c => String(c.className).includes('timer'));
+    assert.ok(card, 'la tarjeta del personalizado esta renderizada');
+    let named = false;
+    (function walk(node) {
+      node.children.forEach((c) => {
+        if (!named && c.className === 'tlabel' && String(c.textContent) === 'Mi vaca rara') named = true;
+        walk(c);
+      });
+    })(card);
+    assert.ok(named, 'la tarjeta muestra el nombre elegido');
+  });
+});
+
 test('frontend: contador del badge (Reclamar/Reiniciar/catch-up)', () => {
   const now = Date.now();
   const seeded = {
