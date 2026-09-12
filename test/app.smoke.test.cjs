@@ -346,19 +346,24 @@ test('frontend: init sin crashear + anadir temporizador + render', () => {
       profiles: [{
         id: 'p1', name: 'Mi servidor', timers: [
           { id: 'a1', cat: 'kakerareact', label: '$mk', mode: 'repeat', intervalMs: 3600000, startAt: t0 - 60 * 60000, endAt: t0 + 60 * 60000, warnMs: null, warnSent: false, done: false, ts: t0 },
-          { id: 'a2', cat: 'rollsreset', label: '$Rolls', mode: 'repeat', intervalMs: 3600000, startAt: t0 - 40 * 60000, endAt: t0 + 20 * 60000, warnMs: null, warnSent: false, done: false, ts: t0 }
+          { id: 'a2', cat: 'rollsreset', label: '$Rolls', mode: 'repeat', intervalMs: 3600000, startAt: t0 - 60 * 60000, endAt: t0 + 60 * 60000, warnMs: null, warnSent: false, done: false, ts: t0 }
         ], syncCode: null, syncSeq: 0, pendingOps: []
       }], active: 'p1'
     });
     onReady();
     const mig = JSON.parse(globals.localStorage._d['mudaeTimer.v1']);
     const migTimers = mig.profiles[0].timers;
-    assert.equal(migTimers.length, 1, 'solo queda un temporizador');
-    assert.equal(migTimers[0].cat, 'rollsmk', 'categoria unificada');
-    assert.equal(migTimers[0].label, '$rolls y $mk');
-    assert.equal(migTimers[0].mode, 'repeat', 'queda repetitivo');
-    assert.equal(migTimers[0].intervalMs, 3600000, 'ciclo de una hora');
-    assert.ok(migTimers[0].endAt > Date.now(), 'sigue el proximo aviso futuro');
+    assert.equal(migTimers.length, 2, 'quedan dos temporizadores, no se fusionan');
+    const mk = migTimers.find(x => x.cat === 'kakerareact');
+    const rolls = migTimers.find(x => x.cat === 'rollsreset');
+    assert.ok(mk && rolls, 'existen $mk y $Rolls por separado');
+    assert.equal(mk.label, '$mk');
+    assert.equal(rolls.label, '$Rolls');
+    assert.equal(mk.endAt, t0 + 60 * 60000, '$mk conserva su endAt');
+    assert.equal(rolls.endAt, t0 + 60 * 60000, '$Rolls conserva su endAt');
+    assert.equal(mk.mode, 'repeat', 'sigue repetitivo');
+    assert.equal(rolls.intervalMs, 3600000, 'ciclo de una hora');
+    assert.ok(mk.endAt > Date.now(), 'sigue el proximo aviso futuro');
   });
 });
 
@@ -402,7 +407,7 @@ test('frontend: contador del badge (Reclamar/Reiniciar/catch-up)', () => {
   const seeded = {
     profiles: [{
       id: 'p1', name: 'Mi servidor', timers: [
-        { id: 'b1', cat: 'rollsmk', label: '$rolls y $mk', mode: 'repeat', intervalMs: 3600000, startAt: now - 60000, endAt: now + 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: now }
+        { id: 'b1', cat: 'kakerareact', label: '$mk', mode: 'repeat', intervalMs: 3600000, startAt: now - 60000, endAt: now + 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: now }
       ], syncCode: null, syncSeq: 0, pendingOps: []
     }],
     active: 'p1'
@@ -413,9 +418,9 @@ test('frontend: contador del badge (Reclamar/Reiniciar/catch-up)', () => {
 
     const timersEl = doc.getElementById('timers');
     const findGroup = (title) => timersEl.children.find(g => String(g.children[0]?.textContent).includes(title));
-    const card = () => cardByLabel(findGroup('En espera'), '$rolls y $mk');
+    const card = () => cardByLabel(findGroup('En espera'), '$mk');
     const badge = () => String(card()?.querySelector('.badge')?.textContent);
-    assert.ok(card(), 'se renderiza la tarjeta del fusionado');
+    assert.ok(card(), 'se renderiza la tarjeta del $mk');
     assert.equal(badge(), '0', 'el badge empieza en 0');
 
     // un ciclo completado -> +1
@@ -474,5 +479,57 @@ test('frontend: contador del badge (Reclamar/Reiniciar/catch-up)', () => {
     const saved4 = JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers[0];
     assert.equal(saved4.count, 3, 'los ciclos vencidos mientras estaba cerrado suman');
     assert.equal(badge(), '3', 'el badge muestra la suma acumulada');
+  });
+});
+
+test('frontend: $rolls y $mk se separan en dos temporizadores enlazados en el tiempo', () => {
+  const t0 = Date.now();
+  const seeded = {
+    profiles: [{
+      id: 'p1', name: 'Mi servidor', timers: [
+        { id: 'm1', cat: 'rollsmk', label: '$rolls y $mk', mode: 'repeat', intervalMs: 3600000, startAt: t0 - 3600000, endAt: t0 + 1800000, warnMs: null, warnSent: false, done: false, count: 3, ts: t0 }
+      ], syncCode: null, syncSeq: 0, pendingOps: []
+    }],
+    active: 'p1'
+  };
+  const { globals, doc, onReady } = bootApp({ 'mudaeTimer.v1': JSON.stringify(seeded) });
+  withTicks(() => {
+    onReady();
+    const saved = () => JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers;
+    const findGroup = (title) => doc.getElementById('timers').children.find(g => String(g.children[0]?.textContent).includes(title));
+
+    // el fusionado antiguo se separa en $mk y $Rolls con los mismos tiempos
+    let timers = saved();
+    assert.equal(timers.length, 2, 'se separa en dos temporizadores');
+    const mk = timers.find(x => x.cat === 'kakerareact');
+    const rolls = timers.find(x => x.cat === 'rollsreset');
+    assert.ok(mk && rolls, '$mk y $Rolls existen por separado');
+    assert.equal(mk.label, '$mk');
+    assert.equal(rolls.label, '$Rolls');
+    assert.equal(mk.endAt, t0 + 1800000, 'no se modifica el endAt original');
+    assert.equal(rolls.endAt, mk.endAt, 'ambos comparten el mismo endAt');
+    assert.equal(mk.count, 3, '$mk hereda el contador');
+    assert.equal(rolls.count, 3, '$Rolls hereda el contador');
+
+    // al modificar uno (modo -> Una vez), el otro se alinea
+    const mkCard = cardByLabel(findGroup('En espera'), '$mk');
+    assert.ok(mkCard, 'tarjeta $mk visible');
+    const btnOnce = buttonIn(mkCard, 'Una vez');
+    btnOnce.onclick({ stopPropagation() {} });
+    timers = saved();
+    assert.equal(timers.find(x => x.cat === 'rollsreset').mode, 'once', '$Rolls cambia a Una vez junto con $mk');
+
+    // al reiniciar $mk, $Rolls sigue el mismo endAt
+    const mkCard2 = cardByLabel(findGroup('En espera'), '$mk');
+    const btnRestart = buttonIn(mkCard2, 'Reiniciar');
+    assert.ok(btnRestart && !btnRestart.disabled, 'Reiniciar habilitado tras Una vez');
+    btnRestart.onclick({ stopPropagation() {} });
+    timers = saved();
+    const mk2 = timers.find(x => x.cat === 'kakerareact');
+    const rolls2 = timers.find(x => x.cat === 'rollsreset');
+    assert.ok(mk2.endAt > Date.now(), 'Reiniciar reprograma a futuro');
+    assert.equal(rolls2.endAt, mk2.endAt, 'al reiniciar $mk, $Rolls se alinea al mismo endAt');
+    assert.equal(mk2.count, 3, 'reiniciar no toca el contador');
+    assert.equal(rolls2.count, 3, 'el contador sigue siendo independiente');
   });
 });

@@ -29,39 +29,82 @@
     };
   }
 
-  // Funde los temporizadores viejos de $mk y $Rolls en uno solo ("$rolls y $mk").
-  function migrateLegacy(prof) {
-    var olds = prof.timers.filter(function (x) { return x.cat === 'kakerareact' || x.cat === 'rollsreset'; });
-    if (!olds.length) return;
-    var endAt = 0, st = 0;
-    olds.forEach(function (x) { if (x.endAt > endAt) { endAt = x.endAt; st = x.startAt || 0; } });
-    var now = Date.now();
-    var t = {
-      id: 'merge-rollsmk',
-      cat: 'rollsmk',
-      label: CAT_BY_KEY.rollsmk ? CAT_BY_KEY.rollsmk.day : '$rolls y $mk',
-      mode: 'repeat',
-      intervalMs: 3600000,
-      startAt: st || endAt - 3600000,
-      endAt: endAt > now ? endAt : now,
-      warnMs: null,
-      warnSent: false,
-      done: false,
-      count: 0,
-      ts: now
+  // Crea uno de los dos temporizadores enlazados ($mk o $Rolls) a partir de una
+  // fuente (el viejo "rollsmk" fusionado o unos "opts" de creación).
+  function rollsTimer(cat, label, src) {
+    var intMs = src.intervalMs || src.ms || 3600000;
+    var endAt = src.endAt || (Date.now() + (src.intervalMs || src.ms || 3600000));
+    return {
+      id: uid(),
+      cat: cat,
+      label: label,
+      mode: src.mode || 'once',
+      intervalMs: intMs,
+      startAt: src.startAt || (endAt - intMs),
+      endAt: endAt,
+      warnMs: src.warnMs || null,
+      warnSent: !!src.warnSent,
+      done: !!src.done,
+      count: src.count || 0,
+      ts: src.ts || Date.now()
     };
-    prof.timers = prof.timers.filter(function (x) { return x.cat !== 'kakerareact' && x.cat !== 'rollsreset'; });
-    prof.timers.push(t);
-    olds.forEach(function (x) {
-      if (deviceId && pushActive) api('POST', '/cancel', { deviceId: deviceId, timerId: x.id });
+  }
+
+  // Separa "$rolls y $mk" (el fusionado antiguo) en los dos temporizadores
+  // originales, $mk y $Rolls, conservando exactamente los tiempos del original.
+  function splitRolls(prof) {
+    var changed = false;
+    var out = [];
+    prof.timers.forEach(function (x) {
+      if (x.cat === 'rollsmk') {
+        if (deviceId && pushActive) api('POST', '/cancel', { deviceId: deviceId, timerId: x.id });
+        out.push(rollsTimer('kakerareact', '$mk', x));
+        out.push(rollsTimer('rollsreset', '$Rolls', x));
+        changed = true;
+      } else {
+        out.push(x);
+      }
     });
-    syncRemote(t);
+    if (changed) prof.timers = out;
+    return changed;
+  }
+
+  // Mantiene enlazados $mk y $Rolls: al modificar uno, el otro se alinea al
+  // mismo tiempo (endAt, modo, intervalos y estado). El contador es independiente.
+  function alignRollsPair(prof) {
+    var a = null, b = null;
+    prof.timers.forEach(function (t) {
+      if (t.cat === 'kakerareact') a = t;
+      else if (t.cat === 'rollsreset') b = t;
+    });
+    if (!a || !b || a === b) return false;
+    var src = ((b.ts || 0) > (a.ts || 0)) ? b : a;
+    [a, b].forEach(function (t) {
+      if (t === src) return;
+      t.intervalMs = src.intervalMs;
+      t.startAt = src.startAt;
+      t.endAt = src.endAt;
+      t.mode = src.mode;
+      t.done = src.done;
+      t.warnMs = src.warnMs;
+      t.warnSent = src.warnSent;
+      t.ts = src.ts;
+    });
+    return true;
+  }
+
+  function normalizeRolls() {
+    state.profiles.forEach(function (p) {
+      splitRolls(p);
+      alignRollsPair(p);
+    });
   }
 
   function loadState() {
     try { return JSON.parse(localStorage.getItem(LS_KEY)); } catch (e) { return null; }
   }
   function save() {
+    normalizeRolls();
     localStorage.setItem(LS_KEY, JSON.stringify(state));
     scheduleSync(false);
   }
@@ -532,6 +575,16 @@
 
   // ---------- Añadir temporizador ----------
   function addTimer(opts) {
+    if (opts.cat === 'rollsmk') {
+      var base = { mode: opts.mode, ms: opts.ms, warnMs: opts.warnMs, count: opts.count || 0, ts: Date.now() };
+      var pair = [
+        rollsTimer('kakerareact', '$mk', base),
+        rollsTimer('rollsreset', '$Rolls', base)
+      ];
+      pair.forEach(function (t) { activeProfile().timers.push(t); syncRemote(t); });
+      save(); render();
+      return;
+    }
     var now = Date.now();
     var t = {
       id: uid(),
@@ -787,7 +840,6 @@
     document.querySelectorAll('.modal').forEach(function (m) {
       m.addEventListener('click', function (e) { if (e.target === m) closeModal(m.id); });
     });
-    state.profiles.forEach(migrateLegacy);
     state.profiles.forEach(function (p) {
       p.timers.forEach(advanceCatchUp);
     });
