@@ -225,7 +225,20 @@
   </div>
 </div>
 
+<div class="modal" id="advanceModal">
+  <div class="modalbox">
+    <h2>Adelantar temporizador</h2>
+    <label for="advanceTime">Cuanto quieres adelantarlo</label>
+    <input type="text" id="advanceTime" placeholder="ej: 10m, 1h 30m">
+    <p style="color:var(--mut);font-size:12px;margin:6px 0 0">Acerca el momento en que termina sin cambiar el ciclo configurado.</p>
+    <div class="modal-actions">
+      <button data-close="advanceModal" class="ghost">Cancelar</button>
+      <button id="advanceSave" class="primary">Adelantar</button>
+    </div>
+  </div>
+</div>
+
 <script src="./parse.js"></script>
-<script src="./app.js?v=20260910c"></script>
+<script src="./app.js?v=20260910d"></script>
 </body>
 </html>

@@ -21,6 +21,7 @@
   var pushActive = false;
   var pushOK = false;
   var editTarget = null;
+  var advanceTarget = null;
 
   function defaultState() {
     return {
@@ -535,6 +536,19 @@
       render();
     };
     actions.appendChild(btnClaim);
+    if (!t.done) {
+      var btnAdvance = document.createElement('button');
+      btnAdvance.textContent = 'Adelantar';
+      btnAdvance.className = 'ghost';
+      btnAdvance.onclick = function (e) {
+        e.stopPropagation();
+        advanceTarget = t;
+        document.getElementById('advanceTime').value = '';
+        openModal('advanceModal');
+        document.getElementById('advanceTime').focus();
+      };
+      actions.appendChild(btnAdvance);
+    }
     var btnMode = document.createElement('button');
     btnMode.textContent = t.mode === 'repeat' ? 'Una vez' : 'Ciclo';
     btnMode.className = 'ghost';
@@ -821,6 +835,18 @@
       restartTimer(editTarget, ms);
       editTarget = null;
       closeModal('editModal');
+    };
+    document.getElementById('advanceSave').onclick = function () {
+      if (!advanceTarget) return;
+      var ms = MudaeParse.textToMs(document.getElementById('advanceTime').value);
+      if (!ms || ms <= 0) { document.getElementById('advanceTime').focus(); return; }
+      var t = advanceTarget;
+      t.endAt -= ms;
+      t.ts = Date.now();
+      syncRemote(t);
+      advanceTarget = null;
+      save(); render();
+      closeModal('advanceModal');
     };
     document.getElementById('addBtn').onclick = function () { openModal('addModal'); };
     document.getElementById('pasteBtn').onclick = function () { openModal('pasteModal'); };

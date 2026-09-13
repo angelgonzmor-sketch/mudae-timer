@@ -78,7 +78,8 @@ function makeDoc() {
   const ids = ['timers', 'profileName', 'profileSel', 'addProfile', 'delProfile', 'addBtn',
     'pasteBtn', 'pushBtn', 'addCat', 'presets', 'addTime', 'addLabel', 'addWarn', 'addWarnTime',
     'addSave', 'pasteText', 'pasteDetect', 'taCopy', 'taCopyBtn', 'pasteResults', 'pasteAdd',
-    'addModal', 'pasteModal', 'syncModal', 'syncBtn', 'sync-status', 'syncForce', 'syncHint', 'syncStatusText'];
+    'addModal', 'pasteModal', 'syncModal', 'syncBtn', 'sync-status', 'syncForce', 'syncHint', 'syncStatusText',
+    'editModal', 'editHours', 'editMinutes', 'editSave', 'advanceModal', 'advanceTime', 'advanceSave'];
   const els = {};
   for (const id of ids) els[id] = createEl('div');
   els.addTime.value = ''; els.addTime.tag = 'input'; els.addTime.type = 'text';
@@ -479,6 +480,51 @@ test('frontend: contador del badge (Reclamar/Reiniciar/catch-up)', () => {
     const saved4 = JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers[0];
     assert.equal(saved4.count, 3, 'los ciclos vencidos mientras estaba cerrado suman');
     assert.equal(badge(), '3', 'el badge muestra la suma acumulada');
+  });
+});
+
+test('frontend: adelantar acerca el final sin cambiar el tiempo establecido', () => {
+  const t0 = Date.now();
+  const seeded = {
+    profiles: [{
+      id: 'p1', name: 'Mi servidor', timers: [
+        { id: 'k1', cat: 'kakerareact', label: '$mk', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 2 * 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 },
+        { id: 'r1', cat: 'rollsreset', label: '$Rolls', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 2 * 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 }
+      ], syncCode: null, syncSeq: 0, pendingOps: []
+    }],
+    active: 'p1'
+  };
+  const { globals, doc, onReady } = bootApp({ 'mudaeTimer.v1': JSON.stringify(seeded) });
+  withTicks(() => {
+    onReady();
+    const saved = () => JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers;
+    const findGroup = (title) => doc.getElementById('timers').children.find(g => String(g.children[0]?.textContent).includes(title));
+    const by = (cat) => saved().find(t => t.cat === cat);
+
+    // adelantar $mk 5m: no cambia el ciclo y arrastra a $Rolls
+    const mkCard = cardByLabel(findGroup('En espera'), '$mk');
+    const advBtn = buttonIn(mkCard, 'Adelantar');
+    assert.ok(advBtn, 'existe el boton Adelantar');
+    advBtn.onclick({ stopPropagation() {} });
+    doc.getElementById('advanceTime').value = '5m';
+    doc.getElementById('advanceSave').onclick();
+    assert.equal(by('kakerareact').endAt, t0 + 2 * 3600000 - 300000, 'se adelanta 5 minutos');
+    assert.equal(by('kakerareact').intervalMs, 3600000, 'el ciclo establecido no cambia');
+    assert.equal(by('kakerareact').mode, 'repeat', 'el modo no cambia');
+    assert.equal(by('rollsreset').endAt, by('kakerareact').endAt, '$Rolls se adelanta junto con $mk');
+
+    // adelantar $Rolls 1h 30m: $mk lo sigue (reloj avanza 1s para distinguir ts)
+    const rollsCard = cardByLabel(findGroup('En espera'), '$Rolls');
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow.call(Date) + 1000;
+      buttonIn(rollsCard, 'Adelantar').onclick({ stopPropagation() {} });
+      doc.getElementById('advanceTime').value = '1h 30m';
+      doc.getElementById('advanceSave').onclick();
+    } finally { Date.now = realNow; }
+    assert.equal(by('rollsreset').endAt, t0 + 2 * 3600000 - 300000 - 5400000, '$Rolls adelantado 1h30m mas');
+    assert.equal(by('kakerareact').endAt, by('rollsreset').endAt, '$mk sigue a $Rolls');
+    assert.equal(by('rollsreset').intervalMs, 3600000, 'ciclo intacto');
   });
 });
 
