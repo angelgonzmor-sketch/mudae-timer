@@ -8,12 +8,19 @@ const parse = require('../public/parse.js');
 function createEl(tag) {
   const node = {
     tag, children: [], style: {}, dataset: {},
+    parent: null,
     className: '',
     textContent: '',
     value: '', type: '', name: '', checked: false,
     classList: { add() {}, remove() {}, contains() { return false; } },
-    appendChild(c) { this.children.push(c); return c; },
-    remove() {},
+    appendChild(c) { this.children.push(c); c.parent = this; return c; },
+    remove() {
+      if (this.parent) {
+        const i = this.parent.children.indexOf(this);
+        if (i >= 0) this.parent.children.splice(i, 1);
+        this.parent = null;
+      }
+    },
     focus() {},
     addEventListener() {},
     onclick: null,
@@ -110,7 +117,7 @@ function makeDoc() {
   return doc;
 }
 
-function bootApp(store) {
+function bootApp(store, notifOverride) {
   const fetchCalls = [];
   const sFetch = (url, opts) => {
     fetchCalls.push({ url: String(url), opts: opts || {} });
@@ -123,7 +130,7 @@ function bootApp(store) {
       setItem(k, v) { this._d[k] = String(v); },
       removeItem(k) { delete this._d[k]; }
     },
-    Notification: { permission: 'denied', requestPermission() { return Promise.resolve('denied'); } }
+    Notification: notifOverride || { permission: 'denied', requestPermission() { return Promise.resolve('denied'); } }
   };
 
   const doc = makeDoc();
@@ -295,7 +302,8 @@ test('frontend: init sin crashear + anadir temporizador + render', () => {
       'el daily no queda en Disponibles, solo el claim vencido');
 
     // --- aviso al terminar: un ciclo que completa tambien notifica (toast en la app) ---
-    const noticesBefore = doc.body.children.filter(c => String(c.className) === 'notice').length;
+    const txt = (node) => { let s = ''; (function z(n) { if (n.textContent) s += n.textContent; n.children.forEach(z); })(node); return s; };
+    const noticesBefore = doc.getElementById('toasts').children.length;
     const realNow3 = Date.now;
     try {
       Date.now = () => realNow2.call(Date) + 26 * 3600000 + 10000; // siguiente ciclo del daily
@@ -303,10 +311,10 @@ test('frontend: init sin crashear + anadir temporizador + render', () => {
     } finally {
       Date.now = realNow3;
     }
-    const noticesAfter = doc.body.children.filter(c => String(c.className) === 'notice').length;
-    assert.equal(noticesAfter, noticesBefore + 1, 'cada ciclo que termina agrega un aviso');
-    const notice = doc.body.children.find(c => String(c.className) === 'notice' && /disponible/i.test(String(c.textContent)));
-    assert.ok(notice, 'el aviso de "disponible" aparece en la app sin permiso del navegador');
+    assert.ok(noticesBefore >= 1, 'habia avisos previos (claim y conversion del daily)');
+    assert.equal(doc.getElementById('toasts').children.length, noticesBefore, 'cada ciclo refresca el aviso del mismo timer en vez de duplicarlo');
+    const notice = doc.getElementById('toasts').children.find(c => String(c.dataset.tag) === dailyCiclo.id);
+    assert.ok(notice && txt(notice).includes('disponible'), 'el aviso de "disponible" del daily aparece en la app sin permiso del navegador');
 
     // --- boton modo: una sola vez <-> ciclo ---
     let claimCard = disp.children.find(c => String(c.className).includes('timer'));
@@ -525,6 +533,54 @@ test('frontend: adelantar acerca el final sin cambiar el tiempo establecido', ()
     assert.equal(by('rollsreset').endAt, t0 + 2 * 3600000 - 300000 - 5400000, '$Rolls adelantado 1h30m mas');
     assert.equal(by('kakerareact').endAt, by('rollsreset').endAt, '$mk sigue a $Rolls');
     assert.equal(by('rollsreset').intervalMs, 3600000, 'ciclo intacto');
+  });
+});
+
+test('frontend: al completarse sale toast push-up y notificacion nativa', () => {
+  const t0 = Date.now();
+  let nativeCalls = 0;
+  function SpyNotification() { nativeCalls++; }
+  SpyNotification.permission = 'granted';
+  SpyNotification.requestPermission = () => Promise.resolve('granted');
+  const seeded = {
+    profiles: [{
+      id: 'p1', name: 'Mi servidor', timers: [
+        { id: 'c1', cat: 'claim', label: 'Claim', mode: 'once', intervalMs: null, startAt: t0, endAt: t0 + 2 * 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 },
+        { id: 'o1', cat: 'custom', label: 'Sorteo', mode: 'once', intervalMs: null, startAt: t0, endAt: t0 + 2 * 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 }
+      ], syncCode: null, syncSeq: 0, pendingOps: []
+    }],
+    active: 'p1'
+  };
+  const { globals, doc, onReady } = bootApp({ 'mudaeTimer.v1': JSON.stringify(seeded) }, SpyNotification);
+  const flat = (node) => { let s = ''; (function z(n) { if (n.textContent) s += n.textContent; n.children.forEach(z); })(node); return s; };
+  const toasts = () => doc.getElementById('toasts').children;
+  withTicks((intervals) => {
+    onReady();
+    assert.equal(toasts().length, 0, 'sin toasts al entrar');
+
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow.call(Date) + 2 * 3600000 + 1000;
+      intervals[0].fn();
+    } finally {
+      Date.now = realNow;
+    }
+    assert.equal(toasts().length, 2, 'un toast por temporizador completado');
+    assert.equal(nativeCalls, 2, 'ambos disparan notificacion nativa');
+    const first = toasts()[0];
+    assert.ok(flat(first).includes('Claim'), 'el toast muestra la etiqueta');
+    assert.ok(flat(first).includes('El comando ya está disponible.'), 'el toast muestra el mensaje');
+    assert.ok(buttonIn(first, 'Ver'), 'el toast tiene accion Ver');
+    assert.ok(buttonIn(first, '✕'), 'el toast tiene cierre');
+
+    try { Date.now = () => realNow.call(Date) + 2 * 3600000 + 2000; intervals[0].fn(); }
+    finally { Date.now = realNow; }
+    assert.equal(toasts().length, 2, 'no se duplican al repetir el tick');
+
+    buttonIn(toasts()[0], 'Ver').onclick();
+    assert.equal(toasts().length, 1, 'Ver cierra su toast');
+    buttonIn(toasts()[0], '✕').onclick();
+    assert.equal(toasts().length, 0, 'cerrar quita el toast');
   });
 });
 
