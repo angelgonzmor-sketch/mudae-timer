@@ -545,6 +545,7 @@ test('frontend: separa disponibles, ciclos y de una vez en grupos', () => {
     onReady();
     const titles = () => doc.getElementById('timers').children.map(g => String(g.children[0]?.textContent));
     assert.deepEqual(titles(), ['Disponibles (1)', 'En espera · Ciclo (1)', 'En espera · Una vez (1)']);
+    assert.ok(doc.getElementById('timers').children.every(g => g.open === false), 'los grupos se muestran plegados al entrar');
     const groupBy = (title) => doc.getElementById('timers').children.find(g => String(g.children[0]?.textContent).startsWith(title));
     assert.ok(cardByLabel(groupBy('Disponibles'), 'Claim'), 'Claim queda en Disponibles');
     assert.ok(cardByLabel(groupBy('En espera · Ciclo'), '$Rolls'), '$Rolls en espera pero como ciclo');

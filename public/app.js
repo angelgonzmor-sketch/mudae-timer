@@ -22,6 +22,7 @@
   var pushOK = false;
   var editTarget = null;
   var advanceTarget = null;
+  var groupOpen = {};
 
   function defaultState() {
     return {
@@ -466,12 +467,15 @@
   function group(title, timers) {
     var g = document.createElement('details');
     g.className = 'group';
-    g.open = true;
+    g.open = !!groupOpen[title];
     var sum = document.createElement('summary');
     sum.className = 'group-title';
     sum.textContent = title + ' (' + timers.length + ')';
     g.appendChild(sum);
     timers.forEach(function (t) { g.appendChild(card(t)); });
+    g.addEventListener('toggle', function () {
+      groupOpen[title] = g.open;
+    });
     return g;
   }
 
