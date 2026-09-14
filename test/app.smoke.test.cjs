@@ -497,7 +497,9 @@ test('frontend: adelantar acerca el final sin cambiar el tiempo establecido', ()
     profiles: [{
       id: 'p1', name: 'Mi servidor', timers: [
         { id: 'k1', cat: 'kakerareact', label: '$mk', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 2 * 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 },
-        { id: 'r1', cat: 'rollsreset', label: '$Rolls', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 2 * 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 }
+        { id: 'r1', cat: 'rollsreset', label: '$Rolls', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 2 * 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 },
+        { id: 'c1', cat: 'custom', label: 'Sorteo', mode: 'once', intervalMs: null, startAt: t0, endAt: t0 + 300000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 },
+        { id: 'rt1', cat: 'rt', label: 'Rt', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 300000, warnMs: null, warnSent: false, done: false, count: 2, ts: t0 }
       ], syncCode: null, syncSeq: 0, pendingOps: []
     }],
     active: 'p1'
@@ -533,6 +535,29 @@ test('frontend: adelantar acerca el final sin cambiar el tiempo establecido', ()
     assert.equal(by('rollsreset').endAt, t0 + 2 * 3600000 - 300000 - 5400000, '$Rolls adelantado 1h30m mas');
     assert.equal(by('kakerareact').endAt, by('rollsreset').endAt, '$mk sigue a $Rolls');
     assert.equal(by('rollsreset').intervalMs, 3600000, 'ciclo intacto');
+
+    // --- adelantar mas de lo que queda en una vez: se marca done ---
+    const onceCard = cardByLabel(findGroup('En espera · Una vez'), 'Sorteo');
+    assert.ok(onceCard, 'el timer de una vez esta en espera');
+    buttonIn(onceCard, 'Adelantar').onclick({ stopPropagation() {} });
+    doc.getElementById('advanceTime').value = '6m';
+    doc.getElementById('advanceSave').onclick();
+    assert.equal(by('custom').done, true, 'una vez adelantado mas de lo que queda queda done');
+    assert.equal(by('custom').count, 1, 'el ciclo se da por terminado sin saltar toast');
+
+    // --- adelantar mas de lo que queda en ciclo: completa y agenda el siguiente ---
+    const repeatCard = cardByLabel(findGroup('En espera'), '$rt');
+    assert.ok(repeatCard, 'el timer repetitivo esta en espera');
+    try {
+      Date.now = () => realNow.call(Date) + 500;
+      buttonIn(repeatCard, 'Adelantar').onclick({ stopPropagation() {} });
+      doc.getElementById('advanceTime').value = '7m';
+      doc.getElementById('advanceSave').onclick();
+    } finally { Date.now = realNow; }
+    assert.equal(by('rt').count, 3, 'ciclo adelantado da por terminado una vuelta');
+    assert.equal(by('rt').endAt, t0 + 300000 + 3600000, 'el siguiente ciclo se agenda desde el final original');
+    assert.equal(by('rt').done, false, 'el timer sigue activo');
+    assert.equal(doc.getElementById('toasts').children.length, 0, 'no se genera toast por completar por adelanto');
   });
 });
 

@@ -12,6 +12,10 @@ test('textToMs: unidades comunes', () => {
   assert.equal(textToMs('1d 2h 3m 4s'), 86400000 + 2 * 3600000 + 3 * 60000 + 4000);
   assert.equal(textToMs('1:05:30'), (3600 + 300 + 30) * 1000);
   assert.equal(textToMs('1.5h'), 1.5 * 3600000);
+  assert.equal(textToMs('1h30m'), 3600000 + 30 * 60000, 'unidades sin espacios');
+  assert.equal(textToMs('1d4h30m'), 86400000 + 4 * 3600000 + 30 * 60000);
+  assert.equal(textToMs('5m30s'), 5 * 60000 + 30000);
+  assert.equal(textToMs('90mil'), null, 'no confunde m con una palabra');
   assert.equal(textToMs(''), null);
   assert.equal(textToMs('nada de tiempo'), null);
 });

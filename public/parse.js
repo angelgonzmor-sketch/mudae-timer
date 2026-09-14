@@ -16,7 +16,7 @@
     }
 
     var total = 0, found = false;
-    var re = /(\d+(?:[.,]\d+)?)\s*(dias|dia|days|day|d|hrs|hours|horas|hora|hr|h|min|mins|minutos|minuto|minutes|minute|m|seg|segs|segundos|segundo|seconds|second|secs|sec|s)\b/gi;
+    var re = /(\d+(?:[.,]\d+)?)\s*(dias|dia|days|day|d|hrs|hours|horas|hora|hr|h|min|mins|minutos|minuto|minutes|minute|m|seg|segs|segundos|segundo|seconds|second|secs|sec|s)(?=$|[^a-z])/gi;
     var m;
     while ((m = re.exec(str)) !== null) {
       var n = parseFloat(m[1].replace(',', '.'));

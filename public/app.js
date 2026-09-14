@@ -750,7 +750,9 @@
     var host = document.getElementById('toasts');
     if (!host) { flashNotice(body ? title + ': ' + body : title); return; }
     var existing = null;
-    host.children.forEach(function (t) { if (!existing && tag && t.dataset && t.dataset.tag === tag) existing = t; });
+    Array.prototype.forEach.call(host.children, function (t) {
+      if (!existing && tag && t.dataset && t.dataset.tag === tag) existing = t;
+    });
     var n = existing || document.createElement('div');
     n.innerHTML = '';
     n.className = 'toast';
@@ -913,7 +915,23 @@
       var ms = MudaeParse.textToMs(document.getElementById('advanceTime').value);
       if (!ms || ms <= 0) { document.getElementById('advanceTime').focus(); return; }
       var t = advanceTarget;
-      t.endAt -= ms;
+      var oldEnd = t.endAt;
+      var newEnd = oldEnd - ms;
+      if (newEnd <= Date.now()) {
+        // Adelantar mas de lo que queda solo completa el ciclo actual.
+        if (t.mode === 'repeat') {
+          t.count = (t.count || 0) + 1;
+          t.startAt = oldEnd;
+          t.endAt = oldEnd + (t.intervalMs || 3600000);
+          while (t.endAt <= Date.now()) t.endAt += (t.intervalMs || 3600000);
+        } else {
+          t.count = (t.count || 0) + 1;
+          t.done = true;
+          t.warnSent = true;
+        }
+      } else {
+        t.endAt = newEnd;
+      }
       t.ts = Date.now();
       syncRemote(t);
       advanceTarget = null;
