@@ -528,6 +528,36 @@ test('frontend: adelantar acerca el final sin cambiar el tiempo establecido', ()
   });
 });
 
+test('frontend: separa disponibles, ciclos y de una vez en grupos', () => {
+  const t0 = Date.now();
+  const seeded = {
+    profiles: [{
+      id: 'p1', name: 'Mi servidor', timers: [
+        { id: 'd1', cat: 'claim', label: 'Claim', mode: 'once', intervalMs: null, startAt: t0 - 3600000, endAt: t0 - 1800000, warnMs: null, warnSent: false, done: true, count: 2, ts: t0 },
+        { id: 'c1', cat: 'rollsreset', label: '$Rolls', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 },
+        { id: 'o1', cat: 'custom', label: 'Unica vez', mode: 'once', intervalMs: null, startAt: t0, endAt: t0 + 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 }
+      ], syncCode: null, syncSeq: 0, pendingOps: []
+    }],
+    active: 'p1'
+  };
+  const { globals, doc, onReady } = bootApp({ 'mudaeTimer.v1': JSON.stringify(seeded) });
+  withTicks(() => {
+    onReady();
+    const titles = () => doc.getElementById('timers').children.map(g => String(g.children[0]?.textContent));
+    assert.deepEqual(titles(), ['Disponibles (1)', 'En espera · Ciclo (1)', 'En espera · Una vez (1)']);
+    const groupBy = (title) => doc.getElementById('timers').children.find(g => String(g.children[0]?.textContent).startsWith(title));
+    assert.ok(cardByLabel(groupBy('Disponibles'), 'Claim'), 'Claim queda en Disponibles');
+    assert.ok(cardByLabel(groupBy('En espera · Ciclo'), '$Rolls'), '$Rolls en espera pero como ciclo');
+    assert.ok(cardByLabel(groupBy('En espera · Una vez'), 'Unica vez'), 'unica vez separada de los ciclos');
+
+    // al pasar un ciclo a una vez, cambia de grupo sin recargar
+    const rollsCard = cardByLabel(groupBy('En espera · Ciclo'), '$Rolls');
+    buttonIn(rollsCard, 'Una vez').onclick({ stopPropagation() {} });
+    assert.deepEqual(titles(), ['Disponibles (1)', 'En espera · Una vez (2)']);
+    assert.ok(cardByLabel(groupBy('En espera · Una vez'), '$Rolls'), '$Rolls ahora en una vez');
+  });
+});
+
 test('frontend: $rolls y $mk se separan en dos temporizadores enlazados en el tiempo', () => {
   const t0 = Date.now();
   const seeded = {

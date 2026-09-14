@@ -456,8 +456,11 @@
     var wait = prof.timers.filter(function (t) { return !t.done; });
     ready.sort(function (a, b) { return (b.endAt || 0) - (a.endAt || 0); });
     wait.sort(function (a, b) { return remaining(a) - remaining(b); });
-    if (wait.length) list.appendChild(group('En espera', wait));
+    var waitCycle = wait.filter(function (t) { return t.mode === 'repeat'; });
+    var waitOnce = wait.filter(function (t) { return t.mode === 'once'; });
     if (ready.length) list.appendChild(group('Disponibles', ready));
+    if (waitCycle.length) list.appendChild(group('En espera · Ciclo', waitCycle));
+    if (waitOnce.length) list.appendChild(group('En espera · Una vez', waitOnce));
   }
 
   function group(title, timers) {
