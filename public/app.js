@@ -684,6 +684,26 @@
   }
 
   // ---------- Modal pegar $tu ----------
+  // Timers del perfil que corresponden a una categoría detectada del $tu.
+  // El par enlazado ($mk + $Rolls) se detecta como "rollsmk" en el texto.
+  function timersForTu(prof, r) {
+    var cats = r.category === 'rollsmk' ? ['kakerareact', 'rollsreset'] : [r.category];
+    return prof.timers.filter(function (x) { return cats.indexOf(x.cat) >= 0; });
+  }
+
+  // Re-ancla el progreso de un temporizador existente a lo que dice el $tu,
+  // conservando su duración asignada (end-start). No toca intervalMs/mode/count.
+  function applyTuProgress(t, r) {
+    if (t.done || r.ready) return false;
+    var assigned = (t.endAt - t.startAt) || t.intervalMs || 3600000;
+    if (assigned <= 0) assigned = t.intervalMs || 3600000;
+    var endAt = Date.now() + (Math.max(0, r.ms || 0));
+    t.startAt = endAt - assigned;
+    t.endAt = endAt;
+    t.ts = Date.now();
+    return true;
+  }
+
   function initPasteModal() {
     document.getElementById('taCopy').textContent = TA_RECOMMENDED;
     document.getElementById('taCopyBtn').onclick = function () {
@@ -701,39 +721,77 @@
         box.textContent = 'No se detectó nada. Intenta pegar el texto completo de $tu, o usa "Añadir tiempo".';
         return;
       }
+      var prof = activeProfile();
+      var updated = [], skipped = [], created = [];
       found.forEach(function (r) {
+        var matches = timersForTu(prof, r);
+        var active = matches.filter(function (t) { return !t.done; });
+        if (active.length) {
+          if (r.ready) skipped.push(r);
+          else updated.push(r);
+        } else if (matches.length) {
+          skipped.push(r);
+        } else {
+          created.push(r);
+        }
+      });
+      var nUpdated = 0;
+      updated.forEach(function (r) {
+        timersForTu(prof, r).forEach(function (t) {
+          if (!t.done && applyTuProgress(t, r)) nUpdated++;
+        });
+      });
+      if (nUpdated) { save(); render(); }
+      var nameOf = function (r) {
+        var cat = CAT_BY_KEY[r.category];
+        return (cat ? cat.day : r.category) + (r.ready ? ' (listo)' : '');
+      };
+      var summary = [];
+      if (updated.length) summary.push('Progreso actualizado (sin cambiar el tiempo asignado): ' + updated.map(nameOf).join(', '));
+      if (skipped.length) summary.push('Ya en tus temporizadores, no se tocan: ' + skipped.map(nameOf).join(', '));
+      if (summary.length) {
+        var sum = document.createElement('div');
+        sum.className = 'paste-summary';
+        sum.style.cssText = 'font-size:12px;color:var(--mut);margin:4px 0 8px';
+        sum.textContent = summary.join(' · ');
+        box.appendChild(sum);
+      }
+      created.forEach(function (r) {
         var row = document.createElement('div'); row.className = 'prow';
         var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = true;
-        cb.dataset.i = String(found.indexOf(r));
+        cb.dataset.i = String(created.indexOf(r));
         var name = document.createElement('span'); name.className = 'pname';
-        var cat = CAT_BY_KEY[r.category];
-        name.textContent = (cat ? cat.day : r.category) + (r.ready ? ' (listo)' : '');
+        name.textContent = nameOf(r);
         var timeIn = document.createElement('input'); timeIn.type = 'text';
         timeIn.value = r.ready ? '' : MudaeParse.msToText(r.ms, true);
-        timeIn.dataset.i = String(found.indexOf(r));
+        timeIn.dataset.i = String(created.indexOf(r));
         row.appendChild(cb); row.appendChild(name); row.appendChild(timeIn);
         box.appendChild(row);
       });
-      document.getElementById('pasteAdd').style.display = 'block';
-      document.getElementById('pasteAdd').onclick = function () {
-        var rows = box.querySelectorAll('.prow');
-        var added = 0;
-        rows.forEach(function (row) {
-          var cb = row.querySelector('.prow input[type=checkbox]');
-          var timeIn = row.querySelector('.prow input[type=text]');
-          if (!cb.checked) return;
-          var f = found[Number(cb.dataset.i)];
-          var ms = MudaeParse.textToMs(timeIn.value);
-          if (ms == null) ms = 0;
-          addTimer({ cat: f.category, ms: ms, mode: 'once', warnMs: null, label: CAT_BY_KEY[f.category] ? CAT_BY_KEY[f.category].day : f.category });
-          added++;
-        });
-        document.getElementById('pasteText').value = '';
-        box.innerHTML = '';
+      if (created.length) {
+        document.getElementById('pasteAdd').style.display = 'block';
+        document.getElementById('pasteAdd').onclick = function () {
+          var rows = box.querySelectorAll('.prow');
+          var added = 0;
+          rows.forEach(function (row) {
+            var cb = row.querySelector('.prow input[type=checkbox]');
+            var timeIn = row.querySelector('.prow input[type=text]');
+            if (!cb.checked) return;
+            var f = created[Number(cb.dataset.i)];
+            var ms = MudaeParse.textToMs(timeIn.value);
+            if (ms == null) ms = 0;
+            addTimer({ cat: f.category, ms: ms, mode: 'once', warnMs: null, label: CAT_BY_KEY[f.category] ? CAT_BY_KEY[f.category].day : f.category });
+            added++;
+          });
+          document.getElementById('pasteText').value = '';
+          box.innerHTML = '';
+          document.getElementById('pasteAdd').style.display = 'none';
+          closeModal('pasteModal');
+          if (added) flashNotice(added + ' temporizador(es) añadido(s).');
+        };
+      } else {
         document.getElementById('pasteAdd').style.display = 'none';
-        closeModal('pasteModal');
-        if (added) flashNotice(added + ' temporizador(es) añadido(s).');
-      };
+      }
     };
   }
 

@@ -724,3 +724,70 @@ test('frontend: boton Resetear recarga la app sin borrar datos', async () => {
   await new Promise(r => setTimeout(r, 600));
   assert.equal(context._reloadCount, 1, 'recarga la pagina una sola vez');
 });
+
+test('frontend: $tu actualiza el progreso sin cambiar el tiempo asignado', () => {
+  const t0 = Date.now();
+  const seeded = {
+    profiles: [{
+      id: 'p1', name: 'Mi servidor', timers: [
+        { id: 'cl1', cat: 'claim', label: 'Claim', mode: 'repeat', intervalMs: 3600000, startAt: t0 - 1800000, endAt: t0 + 1800000, warnMs: null, warnSent: false, done: false, count: 2, ts: t0 },
+        { id: 'mk1', cat: 'kakerareact', label: '$mk', mode: 'repeat', intervalMs: 3600000, startAt: t0 - 1800000, endAt: t0 + 1800000, warnMs: null, warnSent: false, done: false, count: 1, ts: t0 },
+        { id: 'rl1', cat: 'rollsreset', label: '$Rolls', mode: 'repeat', intervalMs: 3600000, startAt: t0 - 1800000, endAt: t0 + 1800000, warnMs: null, warnSent: false, done: false, count: 1, ts: t0 },
+        { id: 'ky1', cat: 'keys', label: 'Keys', mode: 'once', intervalMs: null, startAt: t0 - 3600000, endAt: t0 - 1800000, warnMs: null, warnSent: false, done: true, count: 1, ts: t0 },
+        { id: 'rt1', cat: 'rt', label: '$rt', mode: 'repeat', intervalMs: 3600000, startAt: t0 - 3600000, endAt: t0 + 600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 }
+      ], syncCode: null, syncSeq: 0, pendingOps: []
+    }],
+    active: 'p1'
+  };
+  const { globals, doc, onReady } = bootApp({ 'mudaeTimer.v1': JSON.stringify(seeded) });
+  const flat = (node) => { let s = ''; (function z(n) { if (n.textContent) s += n.textContent; n.children.forEach(z); })(node); return s; };
+  withTicks(() => {
+    onReady();
+    doc.getElementById('pasteText').value =
+      '$mk rolls reset en 5 min\n' +
+      'Claim reset en 5 min\n' +
+      '$daily se reinicia en 30 min\n' +
+      '$rt ready (listo)\n' +
+      'keysup en 10 min';
+    doc.getElementById('pasteDetect').onclick();
+
+    const saved = () => JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers;
+    const by = (cat) => saved().find(t => t.cat === cat);
+    const rem = (t) => t.endAt - Date.now();
+
+    // Claim: progreso re-anclado a ~5m, duracion asignada intacta
+    const claim = by('claim');
+    assert.ok(claim, 'existe Claim');
+    assert.ok(rem(claim) > 4 * 60000 && rem(claim) < 6 * 60000, 'Claim queda en ~5m');
+    assert.equal(claim.startAt, claim.endAt - 3600000, 'Claim conserva su duracion de 1h');
+    assert.equal(claim.intervalMs, 3600000, 'Claim conserva su ciclo');
+    assert.equal(claim.count, 2, 'Claim conserva su contador');
+    assert.equal(claim.mode, 'repeat', 'Claim conserva su modo');
+
+    // par $mk/$Rolls: detectado como "rollsmk", ambos actualizados y alineados
+    const mk = by('kakerareact'), rolls = by('rollsreset');
+    assert.ok(rem(mk) > 4 * 60000 && rem(mk) < 6 * 60000, '$mk queda en ~5m');
+    assert.equal(mk.intervalMs, 3600000, '$mk conserva su ciclo');
+    assert.equal(mk.count, 1, '$mk conserva su contador');
+    assert.equal(rolls.endAt, mk.endAt, 'el par sigue alineado');
+    assert.equal(rolls.startAt, mk.startAt, 'el par comparte la ventana');
+
+    // Keys (done) y $rt (listo) no se tocan
+    assert.equal(by('keys').done, true, 'Keys terminado sigue como Listo');
+    assert.ok(by('rt').endAt - Date.now() > 8 * 60000, '$rt listo no se re-ancla');
+
+    // propuestas de creacion: solo Daily
+    const box = doc.getElementById('pasteResults');
+    const rows = box.querySelectorAll('.prow');
+    const rowsText = rows.map(r => flat(r));
+    assert.equal(rows.length, 1, 'solo se ofrece la categoria nueva');
+    assert.ok(rowsText[0].includes('$daily'), 'la fila nueva es $daily');
+    assert.ok(!rowsText.some(t => t.includes('Claim') || t.includes('$mk') || t.includes('$Rolls') || t.includes('Keys') || t.includes('$rt')), 'no se duplican existentes');
+    assert.equal(doc.getElementById('pasteAdd').style.display, 'block', 'pasteAdd visible para la nueva');
+
+    // resumen
+    const sum = flat(box);
+    assert.ok(sum.includes('Progreso actualizado'), 'resumen de progreso');
+    assert.ok(sum.includes('no se tocan'), 'resumen de no tocados');
+  });
+});
