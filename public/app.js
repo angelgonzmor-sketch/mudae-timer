@@ -884,6 +884,16 @@
     });
   }
 
+  // Reinicia la app arreglando temporizadores atascados: re-lee el estado,
+  // recalcula lo vencido y re-inicializa el motor, SIN borrar tus datos.
+  function resetApp() {
+    try { scheduleSync(true); } catch (e) {}
+    try { toast('Mudae Timer', 'Reiniciando la app…'); } catch (e) {}
+    setTimeout(function () {
+      try { location.reload(); } catch (e) { location.href = location.href; }
+    }, 400);
+  }
+
   // ---------- Init ----------
   function init() {
     state = loadState() || defaultState();
@@ -930,6 +940,7 @@
       closeModal('advanceModal');
     };
     document.getElementById('addBtn').onclick = function () { openModal('addModal'); };
+    document.getElementById('resetBtn').onclick = function () { resetApp(); };
     document.getElementById('pasteBtn').onclick = function () { openModal('pasteModal'); };
     document.getElementById('pushBtn').onclick = function () {
       if (!('Notification' in window)) { flashNotice('Notificaciones no soportadas aquí.'); return; }

@@ -138,7 +138,10 @@ function bootApp(store, notifOverride) {
     window: { MudaeParse: parse, AudioContext: undefined, fetch: sFetch, Notification: globals.Notification },
     document: doc,
     navigator: {},
-    location: { protocol: 'http:', search: '', hash: '' },
+    location: {
+      protocol: 'http:', search: '', hash: '',
+      reload() { context._reloadCount = (context._reloadCount || 0) + 1; }
+    },
     localStorage: globals.localStorage,
     Notification: globals.Notification,
     fetch: sFetch,
@@ -694,4 +697,30 @@ test('frontend: $rolls y $mk se separan en dos temporizadores enlazados en el ti
     assert.equal(mk2.count, 3, 'reiniciar no toca el contador');
     assert.equal(rolls2.count, 3, 'el contador sigue siendo independiente');
   });
+});
+
+test('frontend: boton Resetear recarga la app sin borrar datos', async () => {
+  const t0 = Date.now();
+  const seeded = {
+    profiles: [{
+      id: 'p1', name: 'Mi servidor', timers: [
+        { id: 'c1', cat: 'claim', label: 'Claim', mode: 'once', intervalMs: null, startAt: t0, endAt: t0 + 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 }
+      ], syncCode: null, syncSeq: 0, pendingOps: []
+    }],
+    active: 'p1'
+  };
+  const { globals, doc, onReady, context } = bootApp({ 'mudaeTimer.v1': JSON.stringify(seeded) });
+  const flat = (node) => { let s = ''; (function z(n) { if (n.textContent) s += n.textContent; n.children.forEach(z); })(node); return s; };
+  withTicks(() => {
+    onReady();
+    const btn = doc.getElementById('resetBtn');
+    assert.ok(btn, 'existe el boton Resetear');
+    assert.equal(typeof btn.onclick, 'function', 'el boton dispara el reset');
+    btn.onclick({ stopPropagation() {} });
+    assert.ok(flat(doc.getElementById('toasts')).includes('Reiniciando la app'), 'muestra toast de reinicio');
+    const saved = JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers;
+    assert.equal(saved.length, 1, 'los datos se conservan antes de recargar');
+  });
+  await new Promise(r => setTimeout(r, 600));
+  assert.equal(context._reloadCount, 1, 'recarga la pagina una sola vez');
 });
