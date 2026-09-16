@@ -255,9 +255,27 @@
   </div>
 </div>
 
+<div class="modal" id="claimModal">
+  <div class="modalbox">
+    <h2>Reclamar</h2>
+    <p id="claimAvailable" style="color:var(--mut);font-size:13px;margin:4px 0 8px"></p>
+    <label for="claimAmount">¿Cuantos quieres reclamar?</label>
+    <div class="row" style="align-items:flex-end">
+      <div>
+        <input type="number" id="claimAmount" min="1" max="999" value="1">
+      </div>
+      <button id="claimAll" class="ghost" type="button">Todo</button>
+    </div>
+    <div class="modal-actions">
+      <button data-close="claimModal" class="ghost">Cancelar</button>
+      <button id="claimSave" class="primary">Reclamar</button>
+    </div>
+  </div>
+</div>
+
 <div id="toasts" class="toasts" aria-live="polite"></div>
 
 <script src="./parse.js"></script>
-<script src="./app.js?v=20260910k"></script>
+<script src="./app.js?v=20260910l"></script>
 </body>
 </html>

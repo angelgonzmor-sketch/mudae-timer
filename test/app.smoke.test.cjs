@@ -86,7 +86,8 @@ function makeDoc() {
     'pasteBtn', 'pushBtn', 'addCat', 'presets', 'addTime', 'addLabel', 'addWarn', 'addWarnTime',
     'addSave', 'pasteText', 'pasteDetect', 'taCopy', 'taCopyBtn', 'pasteResults', 'pasteAdd',
     'addModal', 'pasteModal', 'syncModal', 'syncBtn', 'sync-status', 'syncForce', 'syncHint', 'syncStatusText',
-    'editModal', 'editHours', 'editMinutes', 'editSave', 'advanceModal', 'advanceTime', 'advanceSave'];
+    'editModal', 'editHours', 'editMinutes', 'editSave', 'advanceModal', 'advanceTime', 'advanceSave',
+    'claimModal', 'claimAmount', 'claimAvailable', 'claimSave', 'claimAll'];
   const els = {};
   for (const id of ids) els[id] = createEl('div');
   els.addTime.value = ''; els.addTime.tag = 'input'; els.addTime.type = 'text';
@@ -94,6 +95,7 @@ function makeDoc() {
   els.addWarn.tag = 'input'; els.addWarn.type = 'checkbox'; els.addWarn.checked = false;
   els.addCat.tag = 'select';
   els.profileSel.tag = 'select';
+  els.claimAmount.tag = 'input'; els.claimAmount.type = 'number'; els.claimAmount.min = '1';
   els.pasteText.tag = 'textarea';
   const doc = {
     store,
@@ -459,9 +461,11 @@ test('frontend: contador del badge (Reclamar/Reiniciar/catch-up)', () => {
     assert.equal(!!unlockedClaim.disabled, false, 'en ciclo Reclamar sigue habilitado');
     assert.equal(typeof unlockedClaim.onclick, 'function', 'Reclamar dispara en ciclo');
 
-    // Reclamar en ciclo: SOLO pone el contador a 0
+    // Reclamar en ciclo: abre el modal y SOLO pone el contador a 0
     const endBeforeCycleClaim = savedRestart.endAt;
     unlockedClaim.onclick({ stopPropagation() {} });
+    doc.getElementById('claimAmount').value = '1';
+    doc.getElementById('claimSave').onclick();
     const savedClaim = JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers[0];
     assert.equal(savedClaim.count, 0, 'Reclamar en ciclo pone el contador a 0');
     assert.equal(savedClaim.endAt, endBeforeCycleClaim, 'Reclamar no toca el countdown');
@@ -789,5 +793,58 @@ test('frontend: $tu actualiza el progreso sin cambiar el tiempo asignado', () =>
     const sum = flat(box);
     assert.ok(sum.includes('Progreso actualizado'), 'resumen de progreso');
     assert.ok(sum.includes('no se tocan'), 'resumen de no tocados');
+  });
+});
+
+test('frontend: Reclamar permite escoger cuantos reclamar', () => {
+  const t0 = Date.now();
+  const seeded = {
+    profiles: [{
+      id: 'p1', name: 'Mi servidor', timers: [
+        { id: 'cl1', cat: 'claim', label: 'Claim', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 3600000, warnMs: null, warnSent: false, done: false, count: 3, ts: t0 },
+        { id: 'mk1', cat: 'kakerareact', label: '$mk', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 3600000, warnMs: null, warnSent: false, done: false, count: 2, ts: t0 },
+        { id: 'rl1', cat: 'rollsreset', label: '$Rolls', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 3600000, warnMs: null, warnSent: false, done: false, count: 3, ts: t0 }
+      ], syncCode: null, syncSeq: 0, pendingOps: []
+    }],
+    active: 'p1'
+  };
+  const { globals, doc, onReady } = bootApp({ 'mudaeTimer.v1': JSON.stringify(seeded) });
+  const flat = (node) => { let s = ''; (function z(n) { if (n.textContent) s += n.textContent; n.children.forEach(z); })(node); return s; };
+  withTicks(() => {
+    onReady();
+    const findGroup = (title) => doc.getElementById('timers').children.find(g => String(g.children[0]?.textContent).includes(title));
+    const by = (cat) => JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers.find(t => t.cat === cat);
+
+    // Reclamar abre el modal con los disponibles
+    buttonIn(cardByLabel(findGroup('En espera'), 'Claim'), 'Reclamar').onclick({ stopPropagation() {} });
+    assert.equal(doc.getElementById('claimAvailable').textContent, 'Disponibles: 3', 'muestra los disponibles');
+
+    // reclamar 2: queda 1 y sale toast
+    doc.getElementById('claimAmount').value = '2';
+    doc.getElementById('claimSave').onclick();
+    assert.equal(by('claim').count, 1, 'quedan 1 tras reclamar 2');
+    assert.ok(flat(doc.getElementById('toasts')).includes('Reclamaste 2') && flat(doc.getElementById('toasts')).includes('quedan 1'), 'toast de confirmacion');
+
+    // reclamar mas de lo disponible: clampa a 0
+    buttonIn(cardByLabel(findGroup('En espera'), 'Claim'), 'Reclamar').onclick({ stopPropagation() {} });
+    doc.getElementById('claimAmount').value = '99';
+    doc.getElementById('claimSave').onclick();
+    assert.equal(by('claim').count, 0, 'nunca queda negativo');
+
+    // contador en 0: Reclamar no abre modal y avisa
+    const toastBefore = doc.getElementById('toasts').children.length;
+    buttonIn(cardByLabel(findGroup('En espera'), 'Claim'), 'Reclamar').onclick({ stopPropagation() {} });
+    assert.equal(doc.getElementById('claimAvailable').textContent, 'Disponibles: 1', 'no re-abre el modal (disponibles intactos)');
+    assert.ok(doc.getElementById('toasts').children.length >= toastBefore, 'puede avisar cuando no hay nada');
+
+    // el boton Todo rellena el total
+    buttonIn(cardByLabel(findGroup('En espera'), '$mk'), 'Reclamar').onclick({ stopPropagation() {} });
+    doc.getElementById('claimAll').onclick();
+    assert.equal(doc.getElementById('claimAmount').value, '2', 'Todo rellena el total disponible');
+    doc.getElementById('claimSave').onclick();
+    assert.equal(by('kakerareact').count, 0, '$mk reclama todo');
+
+    // independencia del par
+    assert.equal(by('rollsreset').count, 3, '$Rolls conserva su propio contador');
   });
 });

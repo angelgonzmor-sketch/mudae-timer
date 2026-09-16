@@ -22,6 +22,7 @@
   var pushOK = false;
   var editTarget = null;
   var advanceTarget = null;
+  var claimTarget = null;
   var groupOpen = {};
 
   function defaultState() {
@@ -541,11 +542,15 @@
     btnClaim.textContent = 'Reclamar';
     btnClaim.onclick = function (e) {
       e.stopPropagation();
-      t.count = 0;
-      t.ts = Date.now();
-      syncRemote(t);
-      save();
-      render();
+      if ((t.count || 0) <= 0) {
+        flashNotice('No hay nada que reclamar.');
+        return;
+      }
+      claimTarget = t;
+      document.getElementById('claimAvailable').textContent = 'Disponibles: ' + t.count;
+      document.getElementById('claimAmount').value = '';
+      openModal('claimModal');
+      document.getElementById('claimAmount').focus();
     };
     actions.appendChild(btnClaim);
     if (!t.done) {
@@ -999,6 +1004,24 @@
     };
     document.getElementById('addBtn').onclick = function () { openModal('addModal'); };
     document.getElementById('resetBtn').onclick = function () { resetApp(); };
+    document.getElementById('claimSave').onclick = function () {
+      if (!claimTarget) return;
+      var n = parseInt(document.getElementById('claimAmount').value, 10);
+      if (!n || n < 1) { document.getElementById('claimAmount').focus(); return; }
+      n = Math.min(n, claimTarget.count || 0);
+      if (n < 1) { claimTarget = null; closeModal('claimModal'); return; }
+      claimTarget.count = (claimTarget.count || 0) - n;
+      claimTarget.ts = Date.now();
+      syncRemote(claimTarget);
+      save(); render();
+      toast(claimTarget.label, 'Reclamaste ' + n + (claimTarget.count ? ', quedan ' + claimTarget.count : '') + '.', 'claim-' + claimTarget.id);
+      claimTarget = null;
+      closeModal('claimModal');
+    };
+    document.getElementById('claimAll').onclick = function () {
+      if (!claimTarget) return;
+      document.getElementById('claimAmount').value = String(claimTarget.count || 0);
+    };
     document.getElementById('pasteBtn').onclick = function () { openModal('pasteModal'); };
     document.getElementById('pushBtn').onclick = function () {
       if (!('Notification' in window)) { flashNotice('Notificaciones no soportadas aquí.'); return; }
