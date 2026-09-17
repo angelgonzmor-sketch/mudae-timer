@@ -117,10 +117,41 @@
   }
 
   // ---------- Motor de tiempo ----------
+  function safeInterval(t) {
+    var iv = t.intervalMs;
+    return isFinite(iv) && iv > 0 ? iv : (CAT_CYCLE[t.cat] || remaining(t) || 3600000);
+  }
+  function sanitizeTimer(t) {
+    if (!t || typeof t !== 'object') return;
+    if (t.done) return;
+    var now = Date.now();
+    var iv = safeInterval(t);
+    if (!isFinite(t.endAt) || !isFinite(t.startAt)) {
+      t.startAt = now;
+      t.endAt = now + iv;
+      t.ts = Date.now();
+    } else {
+      var span = t.endAt - t.startAt;
+      if (!isFinite(span) || span <= 0) {
+        t.startAt = t.endAt - iv;
+        if (!isFinite(t.startAt)) t.startAt = now;
+      }
+    }
+    advanceCatchUp(t);
+  }
+  function sanitizeAll() {
+    state.profiles.forEach(function (p) { (p.timers || []).forEach(sanitizeTimer); });
+  }
   function advanceCatchUp(t) {
     if (t.mode !== 'repeat') return false;
+    var iv = safeInterval(t);
+    t.intervalMs = iv;
+    var now = Date.now();
+    if (!isFinite(t.endAt)) { t.startAt = now; t.endAt = now + iv; return true; }
     var ch = 0;
-    while (t.endAt <= Date.now()) { t.endAt += t.intervalMs; ch++; }
+    var guard = 0;
+    while (t.endAt <= now && guard < 4096) { t.endAt += iv; ch++; guard++; }
+    if (guard >= 4096) { t.endAt = now + iv; }
     if (ch) t.count = (t.count || 0) + ch;
     return ch > 0;
   }
@@ -389,11 +420,15 @@
   }
 
   function adoptRemote(profiles, tsRemote) {
-    state.profiles = profiles;
+    if (profiles && Array.isArray(profiles) && profiles.length === 0
+      && state.profiles.filter(function (p) { return (p.timers || []).length > 0; }).length > 0) {
+      return; // un snapshot vacio no debe borrar el estado local
+    }
+    if (profiles) profiles.forEach(function (p) { (p.timers || []).forEach(sanitizeTimer); });
+    state.profiles = profiles || [];
     try { localStorage.setItem('mudaeSyncTs', String(tsRemote)); } catch (e) {}
     syncTs = tsRemote;
     syncPending = false;
-    state.profiles.forEach(function (p) { (p.timers || []).forEach(advanceCatchUp); });
     save();
     render();
     if (pushActive) activeProfile().timers.forEach(syncRemote);
@@ -909,14 +944,16 @@
           t.intervalMs = catCycle;
           t.startAt = t.endAt;
           t.endAt = t.endAt + catCycle;
-          while (t.endAt <= Date.now()) t.endAt += t.intervalMs;
+          var gc = 0;
+          while (t.endAt <= Date.now() && gc < 4096) { t.endAt += catCycle; gc++; }
           t.warnSent = false;
           t.ts = Date.now();
           syncRemote(t);
         } else if (t.mode === 'repeat') {
           t.startAt = t.endAt;
           t.endAt = t.endAt + t.intervalMs;
-          while (t.endAt <= Date.now()) t.endAt += t.intervalMs;
+          var g = 0;
+          while (t.endAt <= Date.now() && g < 4096) { t.endAt += safeInterval(t); g++; }
           t.warnSent = false;
           t.ts = Date.now();
           syncRemote(t);
@@ -936,22 +973,36 @@
 
   function updateCounts() {
     var prof = activeProfile();
-    document.querySelectorAll('.timer.running').forEach(function (el, i) {
-      var sorted = prof.timers.filter(function (x) { return !x.done; }).sort(function (a, b) { return (a.endAt - Date.now()) - (b.endAt - Date.now()); });
-      var t = sorted[i];
-      if (!t) { el.style.display = 'none'; return; }
+    var cards = {};
+    document.querySelectorAll('.timer.running').forEach(function (el) {
+      var id = el.dataset && el.dataset.tid;
+      if (id != null) cards[id] = el;
+    });
+    var seen = {};
+    var sorted = prof.timers.filter(function (x) { return !x.done; }).sort(function (a, b) { return remaining(a) - remaining(b); });
+    sorted.forEach(function (t) {
+      var el = cards[t.id];
+      if (!el) return;
+      seen[t.id] = true;
       var c = el.querySelector('.count');
       c.textContent = MudaeParse.msToText(remaining(t), remaining(t) < 3600000);
       var bar = el.querySelector('.bar-fill');
       bar.style.width = (progress(t) * 100).toFixed(1) + '%';
+    });
+    Object.keys(cards).forEach(function (id) {
+      if (!seen[id]) cards[id].style.display = 'none';
     });
   }
 
   // Reinicia la app arreglando temporizadores atascados: re-lee el estado,
   // recalcula lo vencido y re-inicializa el motor, SIN borrar tus datos.
   function resetApp() {
-    try { scheduleSync(true); } catch (e) {}
-    try { toast('Mudae Timer', 'Reiniciando la app…'); } catch (e) {}
+    try {
+      sanitizeAll();
+      save();
+      scheduleSync(true);
+    } catch (e) {}
+    try { toast('Mudae Timer', 'Reparando y reiniciando la app…'); } catch (e) {}
     setTimeout(function () {
       try { location.reload(); } catch (e) { location.href = location.href; }
     }, 400);
@@ -987,7 +1038,8 @@
           t.count = (t.count || 0) + 1;
           t.startAt = oldEnd;
           t.endAt = oldEnd + (t.intervalMs || 3600000);
-          while (t.endAt <= Date.now()) t.endAt += (t.intervalMs || 3600000);
+          var g = 0;
+          while (t.endAt <= Date.now() && g < 4096) { t.endAt += safeInterval(t); g++; }
         } else {
           t.count = (t.count || 0) + 1;
           t.done = true;
@@ -1040,9 +1092,7 @@
     document.querySelectorAll('.modal').forEach(function (m) {
       m.addEventListener('click', function (e) { if (e.target === m) closeModal(m.id); });
     });
-    state.profiles.forEach(function (p) {
-      p.timers.forEach(advanceCatchUp);
-    });
+    sanitizeAll();
     save(); render();
     setPushStatus(false, pushActive ? 'conectado al backend' : ('Notification' in window && Notification.permission === 'granted' ? 'Notificaciones activas en este dispositivo' : 'no conectado (activa push)'));
     if (deviceId && location.protocol === 'https:') setupPush();
@@ -1068,7 +1118,7 @@
     if (typeof document !== 'undefined' && document.addEventListener) {
       document.addEventListener('visibilitychange', function () {
         if (document.hidden !== true) {
-          activeProfile().timers.forEach(advanceCatchUp);
+          sanitizeAll();
           save(); render();
           pullSync();
           if (deviceId && 'Notification' in window && Notification.permission === 'granted' && !pushActive) {

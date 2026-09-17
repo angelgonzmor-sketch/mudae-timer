@@ -119,12 +119,13 @@ function makeDoc() {
   return doc;
 }
 
-function bootApp(store, notifOverride) {
+function bootApp(store, notifOverride, extra) {
   const fetchCalls = [];
-  const sFetch = (url, opts) => {
+  const ext = extra || {};
+  const sFetch = ext.fetch || ((url, opts) => {
     fetchCalls.push({ url: String(url), opts: opts || {} });
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
-  };
+  });
   const globals = {
     localStorage: {
       _d: Object.assign({}, store || {}),
@@ -139,7 +140,7 @@ function bootApp(store, notifOverride) {
   const context = {
     window: { MudaeParse: parse, AudioContext: undefined, fetch: sFetch, Notification: globals.Notification },
     document: doc,
-    navigator: {},
+    navigator: Object.assign({}, ext.navigator || {}),
     location: {
       protocol: 'http:', search: '', hash: '',
       reload() { context._reloadCount = (context._reloadCount || 0) + 1; }
@@ -721,7 +722,7 @@ test('frontend: boton Resetear recarga la app sin borrar datos', async () => {
     assert.ok(btn, 'existe el boton Resetear');
     assert.equal(typeof btn.onclick, 'function', 'el boton dispara el reset');
     btn.onclick({ stopPropagation() {} });
-    assert.ok(flat(doc.getElementById('toasts')).includes('Reiniciando la app'), 'muestra toast de reinicio');
+    assert.ok(flat(doc.getElementById('toasts')).includes('Reparando y reiniciando la app'), 'muestra toast de reinicio');
     const saved = JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers;
     assert.equal(saved.length, 1, 'los datos se conservan antes de recargar');
   });
@@ -847,4 +848,112 @@ test('frontend: Reclamar permite escoger cuantos reclamar', () => {
     // independencia del par
     assert.equal(by('rollsreset').count, 3, '$Rolls conserva su propio contador');
   });
+});
+
+test('frontend: updateCounts pinta cada tarjeta con su propio tiempo (no por posicion)', () => {
+  const t0 = Date.now();
+  const seeded = {
+    profiles: [{
+      id: 'p1', name: 'Mi servidor', timers: [
+        { id: 'c1', cat: 'claim', label: 'Claim', mode: 'repeat', intervalMs: 3600000, startAt: t0 + 3600000, endAt: t0 + 7200000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 },
+        { id: 'k1', cat: 'kakerareact', label: '$mk', mode: 'repeat', intervalMs: 3600000, startAt: t0 + 7200000, endAt: t0 + 14400000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 },
+        { id: 'u1', cat: 'custom', label: 'Un rato', mode: 'once', intervalMs: 1800000, startAt: t0 - 1800000, endAt: t0 + 1800000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 }
+      ], syncCode: null, syncSeq: 0, pendingOps: []
+    }],
+    active: 'p1'
+  };
+  const { doc, onReady } = bootApp({ 'mudaeTimer.v1': JSON.stringify(seeded) });
+  withTicks((intervals) => {
+    onReady();
+    const timers = doc.getElementById('timers');
+    const findGroup = (title) => timers.children.find(g => String(g.children[0]?.textContent).includes(title));
+    const countOf = (label) => cardByLabel(findGroup('En espera · Ciclo'), label) || cardByLabel(findGroup('En espera · Una vez'), label) || cardByLabel(findGroup('En espera'), label);
+    const countIn = (label, groupTitle) => cardByLabel(findGroup(groupTitle), label).querySelector('.count')?.textContent;
+
+    // orden del DOM: primero los ciclos (Claim, $mk), despues el "una vez" que vence antes
+    assert.ok(countIn('Claim', 'En espera · Ciclo').includes('2h'), 'Claim muestra sus 2h');
+    assert.ok(countIn('$mk', 'En espera · Ciclo').includes('4h'), '$mk muestra sus 4h');
+    assert.ok(countIn('Un rato', 'En espera · Una vez').includes('30m'), 'el "una vez" de 30m muestra 30m (no el tiempo de un ciclo)');
+
+    // un tick sin cambios re-pinta por identidad y sigue igual
+    const tick = intervals.find(i => i.ms === 1000);
+    tick.fn();
+    assert.ok(countOf('Un rato').querySelector('.count').textContent.includes('30m'), 'tras tick sigue mostrando su propio tiempo');
+    assert.ok(countOf('Claim').querySelector('.count').textContent.includes('2h'), 'Claim no recibe el tiempo del "una vez"');
+  });
+});
+
+test('frontend: al arrancar se sanear los temporizadores danados (NaN/pasado/repeat)', () => {
+  const t0 = Date.now();
+  const seeded = {
+    profiles: [{
+      id: 'p1', name: 'Mi servidor', timers: [
+        { id: 'r1', cat: 'rt', label: '$rt', mode: 'repeat', intervalMs: null, startAt: t0 - 7200000, endAt: t0 - 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 },
+        { id: 'rc1', cat: 'claim', label: 'Claim', mode: 'repeat', intervalMs: 0, startAt: t0 - 7200000, endAt: t0 - 3600000, warnMs: null, warnSent: false, done: false, count: 3, ts: t0 },
+        { id: 'u1', cat: 'custom', label: 'Roto', mode: 'repeat', intervalMs: 3600000, startAt: t0 + 3600000, endAt: t0 - 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 }
+      ], syncCode: null, syncSeq: 0, pendingOps: []
+    }],
+    active: 'p1'
+  };
+  const { globals, onReady } = bootApp({ 'mudaeTimer.v1': JSON.stringify(seeded) });
+  withTicks(() => {
+    onReady();
+    const saved = () => JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers;
+    const by = (id) => saved().find(t => t.id === id);
+    assert.equal(by('r1').intervalMs, 108000000, 'repeat sin intervalo usa el ciclo canonico de rt (30h)');
+    assert.ok(by('r1').endAt > Date.now(), 'repeat atrasado se adelanta al futuro');
+    assert.equal(by('rc1').intervalMs, 3600000, 'intervalo 0 se repara a 1h');
+    assert.ok(by('rc1').count >= 4, 'los ciclos perdidos suman al contador');
+    assert.ok(by('u1').endAt > Date.now(), 'startAt>endAt se re-ancla a futuro');
+    assert.ok(isFinite(by('u1').startAt) && by('u1').startAt <= by('u1').endAt, 'span valido tras saneo');
+  });
+});
+
+test('frontend: adoptRemote sanea el blob remoto y no borra el local si llega vacio', async () => {
+  const t0 = Date.now();
+  const local = {
+    profiles: [{
+      id: 'p1', name: 'Mi servidor', timers: [
+        { id: 'l1', cat: 'claim', label: 'Claim', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 3600000, warnMs: null, warnSent: false, done: false, count: 1, ts: t0 }
+      ], syncCode: null, syncSeq: 0, pendingOps: []
+    }],
+    active: 'p1'
+  };
+  const remoteBad = { guardadoEn: t0 + 100000, profiles: [{ id: 'p9', name: 'Otro', timers: [
+    { id: 'x1', cat: 'rt', label: '$rt', mode: 'repeat', intervalMs: null, startAt: t0 - 7200000, endAt: t0 - 3600000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 - 3600000 }
+  ], syncCode: null, syncSeq: 0, pendingOps: [] }] };
+
+  // 1) blob remoto danado se adopta saneado
+  const fetchRemote = (url, opts) => {
+    const isGet = !opts || opts.method === 'GET' || !opts.method;
+    const body = isGet ? remoteBad : null;
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+  };
+  const { globals, onReady } = bootApp({
+    'mudaeTimer.v1': JSON.stringify(local), 'mudaeSyncTs': '10'
+  }, null, { navigator: { onLine: true }, fetch: fetchRemote });
+  withTicks(() => {
+    onReady();
+  });
+  await new Promise(r => setTimeout(r, 120));
+  let saved = () => JSON.parse(globals.localStorage._d['mudaeTimer.v1']);
+  assert.equal(saved().profiles[0].id, 'p9', 'se adopto el perfil remoto');
+  const xt = saved().profiles[0].timers.find(t => t.id === 'x1');
+  assert.equal(xt.intervalMs, 108000000, 'el remoto con intervalo nulo usa el ciclo canonico de rt (30h)');
+  assert.ok(xt.endAt > Date.now(), 'el remoto atrasado se adelanta al futuro');
+  assert.ok(isFinite(xt.startAt) && xt.startAt <= xt.endAt, 'span valido tras adoptar');
+
+  // 2) blob remoto vacio no borra el estado local
+  const { globals: g2, onReady: onReady2 } = bootApp({
+    'mudaeTimer.v1': JSON.stringify(local), 'mudaeSyncTs': '10'
+  }, null, {
+    navigator: { onLine: true },
+    fetch: () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ guardadoEn: t0 + 200000, profiles: [] }) })
+  });
+  withTicks(() => {
+    onReady2();
+  });
+  await new Promise(r => setTimeout(r, 120));
+  const saved2 = JSON.parse(g2.localStorage._d['mudaeTimer.v1']);
+  assert.equal(saved2.profiles[0].timers.length, 1, 'un pull vacio no borra los temporizadores locales');
 });
