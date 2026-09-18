@@ -803,6 +803,7 @@ test('frontend: Reclamar permite escoger cuantos reclamar', () => {
     profiles: [{
       id: 'p1', name: 'Mi servidor', timers: [
         { id: 'cl1', cat: 'claim', label: 'Claim', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 3600000, warnMs: null, warnSent: false, done: false, count: 3, ts: t0 },
+        { id: 'cl2', cat: 'custom', label: 'Claim2', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 3600000, warnMs: null, warnSent: false, done: false, count: 5, ts: t0 },
         { id: 'mk1', cat: 'kakerareact', label: '$mk', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 3600000, warnMs: null, warnSent: false, done: false, count: 2, ts: t0 },
         { id: 'rl1', cat: 'rollsreset', label: '$Rolls', mode: 'repeat', intervalMs: 3600000, startAt: t0, endAt: t0 + 3600000, warnMs: null, warnSent: false, done: false, count: 3, ts: t0 }
       ], syncCode: null, syncSeq: 0, pendingOps: []
@@ -826,17 +827,24 @@ test('frontend: Reclamar permite escoger cuantos reclamar', () => {
     assert.equal(by('claim').count, 1, 'quedan 1 tras reclamar 2');
     assert.ok(flat(doc.getElementById('toasts')).includes('Reclamaste 2') && flat(doc.getElementById('toasts')).includes('quedan 1'), 'toast de confirmacion');
 
-    // reclamar mas de lo disponible: clampa a 0
+    // con 1 disponible: reclama directo sin pedir cantidad
     buttonIn(cardByLabel(findGroup('En espera'), 'Claim'), 'Reclamar').onclick({ stopPropagation() {} });
-    doc.getElementById('claimAmount').value = '99';
-    doc.getElementById('claimSave').onclick();
-    assert.equal(by('claim').count, 0, 'nunca queda negativo');
+    assert.equal(by('claim').count, 0, 'con 1 disponible reclama directo, sin modal');
+    assert.equal(doc.getElementById('claimAvailable').textContent, 'Disponibles: 3', 'no abre el modal (texto previo intacto)');
+    assert.ok(flat(doc.getElementById('toasts')).includes('Reclamaste 1'), 'toast del reclamo directo');
 
     // contador en 0: Reclamar no abre modal y avisa
     const toastBefore = doc.getElementById('toasts').children.length;
     buttonIn(cardByLabel(findGroup('En espera'), 'Claim'), 'Reclamar').onclick({ stopPropagation() {} });
-    assert.equal(doc.getElementById('claimAvailable').textContent, 'Disponibles: 1', 'no re-abre el modal (disponibles intactos)');
+    assert.equal(doc.getElementById('claimAvailable').textContent, 'Disponibles: 3', 'no re-abre el modal (disponibles intactos)');
     assert.ok(doc.getElementById('toasts').children.length >= toastBefore, 'puede avisar cuando no hay nada');
+
+    // mas de lo disponible: clampa al total sin dejar negativo
+    buttonIn(cardByLabel(findGroup('En espera'), 'Claim2'), 'Reclamar').onclick({ stopPropagation() {} });
+    assert.equal(doc.getElementById('claimAvailable').textContent, 'Disponibles: 5', 'el modal muestra los disponibles del Claim2');
+    doc.getElementById('claimAmount').value = '99';
+    doc.getElementById('claimSave').onclick();
+    assert.equal(by('custom').count, 0, 'nunca queda negativo');
 
     // el boton Todo rellena el total
     buttonIn(cardByLabel(findGroup('En espera'), '$mk'), 'Reclamar').onclick({ stopPropagation() {} });
@@ -855,9 +863,9 @@ test('frontend: updateCounts pinta cada tarjeta con su propio tiempo (no por pos
   const seeded = {
     profiles: [{
       id: 'p1', name: 'Mi servidor', timers: [
-        { id: 'c1', cat: 'claim', label: 'Claim', mode: 'repeat', intervalMs: 3600000, startAt: t0 + 3600000, endAt: t0 + 7200000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 },
-        { id: 'k1', cat: 'kakerareact', label: '$mk', mode: 'repeat', intervalMs: 3600000, startAt: t0 + 7200000, endAt: t0 + 14400000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 },
-        { id: 'u1', cat: 'custom', label: 'Un rato', mode: 'once', intervalMs: 1800000, startAt: t0 - 1800000, endAt: t0 + 1800000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 }
+        { id: 'c1', cat: 'claim', label: 'Claim', mode: 'repeat', intervalMs: 3600000, startAt: t0 + 3600000, endAt: t0 + 7320000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 },
+        { id: 'k1', cat: 'kakerareact', label: '$mk', mode: 'repeat', intervalMs: 3600000, startAt: t0 + 7200000, endAt: t0 + 14520000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 },
+        { id: 'u1', cat: 'custom', label: 'Un rato', mode: 'once', intervalMs: 1800000, startAt: t0 - 1860000, endAt: t0 + 1860000, warnMs: null, warnSent: false, done: false, count: 0, ts: t0 }
       ], syncCode: null, syncSeq: 0, pendingOps: []
     }],
     active: 'p1'

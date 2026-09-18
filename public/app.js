@@ -581,6 +581,14 @@
         flashNotice('No hay nada que reclamar.');
         return;
       }
+      if (t.count === 1) {
+        t.count = 0;
+        t.ts = Date.now();
+        syncRemote(t);
+        save(); render();
+        toast(t.label, 'Reclamaste 1.', 'claim-' + t.id);
+        return;
+      }
       claimTarget = t;
       document.getElementById('claimAvailable').textContent = 'Disponibles: ' + t.count;
       document.getElementById('claimAmount').value = '';
