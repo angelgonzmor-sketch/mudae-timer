@@ -965,3 +965,65 @@ test('frontend: adoptRemote sanea el blob remoto y no borra el local si llega va
   const saved2 = JSON.parse(g2.localStorage._d['mudaeTimer.v1']);
   assert.equal(saved2.profiles[0].timers.length, 1, 'un pull vacio no borra los temporizadores locales');
 });
+
+test('frontend: el candado bloquea modificar el temporizador hasta desbloquearlo', () => {
+  const t0 = Date.now();
+  const seeded = {
+    profiles: [{
+      id: 'p1', name: 'Mi servidor', timers: [
+        { id: 'l1', cat: 'claim', label: 'Claim', mode: 'repeat', intervalMs: 3600000, startAt: t0 - 3600000, endAt: t0 + 3600000, warnMs: null, warnSent: false, done: false, count: 3, ts: t0 }
+      ], syncCode: null, syncSeq: 0, pendingOps: []
+    }],
+    active: 'p1'
+  };
+  const { globals, doc, onReady } = bootApp({ 'mudaeTimer.v1': JSON.stringify(seeded) });
+  const flat = (node) => { let s = ''; (function z(n) { if (n.textContent) s += n.textContent; n.children.forEach(z); })(node); return s; };
+  withTicks(() => {
+    onReady();
+    const card = () => cardByLabel(doc.getElementById('timers').children.find(g => String(g.children[0]?.textContent).includes('En espera')), 'Claim');
+    const by = () => JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers[0];
+    const toasts = () => flat(doc.getElementById('toasts'));
+
+    // desbloqueado por defecto: candado abierto
+    assert.ok(buttonIn(card(), '🔓'), 'candado abierto por defecto');
+    assert.equal(!!by().locked, false, 'locked false por defecto');
+
+    // bloquear: candado cerrado y se persiste
+    buttonIn(card(), '🔓').onclick({ stopPropagation() {} });
+    assert.ok(buttonIn(card(), '🔒'), 'tras bloquear muestra candado cerrado');
+    assert.equal(by().locked, true, 'locked persiste en el estado');
+    assert.ok(toasts().includes('bloqueado'), 'toast de bloqueo');
+
+    // modificar estando bloqueado: prohibido y avisa
+    const endLocked = by().endAt;
+    buttonIn(card(), 'Reiniciar').onclick({ stopPropagation() {} });
+    assert.ok(toasts().includes('bloqueado') && toasts().includes('No se puede modificar'), 'avisa que no se puede modificar');
+    assert.equal(by().endAt, endLocked, 'Reiniciar no cambia nada');
+    assert.equal(by().count, 3, 'el contador no se toca');
+
+    buttonIn(card(), 'Una vez').onclick({ stopPropagation() {} });
+    assert.equal(by().mode, 'repeat', 'no cambia a Una vez');
+
+    buttonIn(card(), 'Reclamar').onclick({ stopPropagation() {} });
+    assert.equal(by().count, 3, 'Reclamar se bloquea');
+
+    buttonIn(card(), 'Adelantar').onclick({ stopPropagation() {} });
+    buttonIn(card(), 'Eliminar').onclick({ stopPropagation() {} });
+    assert.equal(by().endAt, endLocked, 'Adelantar y Eliminar no hacen nada');
+    assert.equal(JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers.length, 1, 'el temporizador no se elimina');
+
+    // el $tu no re-ancla un temporizador bloqueado
+    doc.getElementById('pasteText').value = 'Claim reset en 5 min';
+    doc.getElementById('pasteDetect').onclick();
+    assert.equal(by().endAt, endLocked, 'el $tu no modifica el bloqueado');
+    assert.ok(flat(doc.getElementById('pasteResults')).includes('Bloqueados, no se tocan'), 'resumen senala el bloqueado');
+
+    // desbloquear: ya se puede modificar
+    buttonIn(card(), '🔒').onclick({ stopPropagation() {} });
+    assert.ok(buttonIn(card(), '🔓'), 'candado abierto tras desbloquear');
+    assert.equal(by().locked, false, 'locked false tras desbloquear');
+    buttonIn(card(), 'Reiniciar').onclick({ stopPropagation() {} });
+    assert.ok(by().endAt > Date.now(), 'tras desbloquear Reiniciar reprograma a futuro');
+    assert.equal(by().count, 3, 'Reiniciar conserva el contador');
+  });
+});

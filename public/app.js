@@ -49,7 +49,8 @@
       warnSent: !!src.warnSent,
       done: !!src.done,
       count: src.count || 0,
-      ts: src.ts || Date.now()
+      ts: src.ts || Date.now(),
+      locked: !!src.locked
     };
   }
 
@@ -343,7 +344,7 @@
           return {
             id: t.id, cat: t.cat, label: t.label, mode: t.mode,
             intervalMs: t.intervalMs, startAt: t.startAt, endAt: t.endAt,
-            warnMs: t.warnMs, warnSent: t.warnSent, done: t.done, count: t.count, ts: t.ts
+            warnMs: t.warnMs, warnSent: t.warnSent, done: t.done, count: t.count, ts: t.ts, locked: !!t.locked
           };
         })
       };
@@ -569,14 +570,38 @@
     el.appendChild(meta);
 
     var actions = document.createElement('div'); actions.className = 'actions';
+    function blocked(t) {
+      if (t && t.locked) {
+        flashNotice('No se puede modificar: el temporizador está bloqueado. Desbloquéalo para poder cambiarlo.');
+        return true;
+      }
+      return false;
+    }
+    var btnLock = document.createElement('button');
+    btnLock.className = 'ghost lock-btn';
+    btnLock.textContent = t.locked ? '🔒' : '🔓';
+    btnLock.title = t.locked ? 'Desbloquear modificación' : 'Bloquear modificación';
+    btnLock.onclick = function (e) {
+      e.stopPropagation();
+      t.locked = !t.locked;
+      syncRemote(t);
+      save(); render();
+      toast(t.label, t.locked ? 'Temporizador bloqueado: no se puede modificar hasta desbloquearlo.' : 'Temporizador desbloqueado.', 'lock-' + t.id);
+    };
+    actions.appendChild(btnLock);
     var btnRestart = document.createElement('button');
     btnRestart.textContent = 'Reiniciar';
-    btnRestart.onclick = function (e) { e.stopPropagation(); restartTimer(t, t.intervalMs || 3600000); };
+    btnRestart.onclick = function (e) {
+      e.stopPropagation();
+      if (blocked(t)) return;
+      restartTimer(t, t.intervalMs || 3600000);
+    };
     actions.appendChild(btnRestart);
     var btnClaim = document.createElement('button');
     btnClaim.textContent = 'Reclamar';
     btnClaim.onclick = function (e) {
       e.stopPropagation();
+      if (blocked(t)) return;
       if ((t.count || 0) <= 0) {
         flashNotice('No hay nada que reclamar.');
         return;
@@ -602,6 +627,7 @@
       btnAdvance.className = 'ghost';
       btnAdvance.onclick = function (e) {
         e.stopPropagation();
+        if (blocked(t)) return;
         advanceTarget = t;
         document.getElementById('advanceTime').value = '';
         openModal('advanceModal');
@@ -612,12 +638,20 @@
     var btnMode = document.createElement('button');
     btnMode.textContent = t.mode === 'repeat' ? 'Una vez' : 'Ciclo';
     btnMode.className = 'ghost';
-    btnMode.onclick = function (e) { e.stopPropagation(); toggleMode(t); };
+    btnMode.onclick = function (e) {
+      e.stopPropagation();
+      if (blocked(t)) return;
+      toggleMode(t);
+    };
     actions.appendChild(btnMode);
     var btnEdit = document.createElement('button');
     btnEdit.textContent = 'Editar tiempo';
     btnEdit.className = 'ghost';
-    btnEdit.onclick = function (e) { e.stopPropagation(); openEdit(t); };
+    btnEdit.onclick = function (e) {
+      e.stopPropagation();
+      if (blocked(t)) return;
+      openEdit(t);
+    };
     actions.appendChild(btnEdit);
     if (t.mode === 'once') {
       var btnDone = document.createElement('button');
@@ -625,6 +659,7 @@
       btnDone.className = 'ghost';
       btnDone.onclick = function (e) {
         e.stopPropagation();
+        if (blocked(t)) return;
         t.done = !t.done;
         t.warnSent = true;
         t.ts = Date.now();
@@ -638,6 +673,7 @@
     btnDel.className = 'ghost danger';
     btnDel.onclick = function (e) {
       e.stopPropagation();
+      if (blocked(t)) return;
       activeProfile().timers = activeProfile().timers.filter(function (x) { return x.id !== t.id; });
       if (deviceId) api('POST', '/cancel', { deviceId: deviceId, timerId: t.id });
       save(); render();
@@ -672,7 +708,8 @@
       warnSent: false,
       done: false,
       count: 0,
-      ts: now
+      ts: now,
+      locked: false
     };
     activeProfile().timers.push(t);
     syncRemote(t);
@@ -742,7 +779,7 @@
   // Re-ancla el progreso de un temporizador existente a lo que dice el $tu,
   // conservando su duración asignada (end-start). No toca intervalMs/mode/count.
   function applyTuProgress(t, r) {
-    if (t.done || r.ready) return false;
+    if (t.locked || t.done || r.ready) return false;
     var assigned = (t.endAt - t.startAt) || t.intervalMs || 3600000;
     if (assigned <= 0) assigned = t.intervalMs || 3600000;
     var endAt = Date.now() + (Math.max(0, r.ms || 0));
@@ -770,12 +807,13 @@
         return;
       }
       var prof = activeProfile();
-      var updated = [], skipped = [], created = [];
+      var updated = [], skipped = [], skippedLocked = [], created = [];
       found.forEach(function (r) {
         var matches = timersForTu(prof, r);
         var active = matches.filter(function (t) { return !t.done; });
         if (active.length) {
           if (r.ready) skipped.push(r);
+          else if (active.every(function (t) { return t.locked; })) skippedLocked.push(r);
           else updated.push(r);
         } else if (matches.length) {
           skipped.push(r);
@@ -790,13 +828,14 @@
         });
       });
       if (nUpdated) { save(); render(); }
-      var nameOf = function (r) {
+      var nameOf = function (r, suffix) {
         var cat = CAT_BY_KEY[r.category];
-        return (cat ? cat.day : r.category) + (r.ready ? ' (listo)' : '');
+        return (cat ? cat.day : r.category) + (suffix || '');
       };
       var summary = [];
-      if (updated.length) summary.push('Progreso actualizado (sin cambiar el tiempo asignado): ' + updated.map(nameOf).join(', '));
-      if (skipped.length) summary.push('Ya en tus temporizadores, no se tocan: ' + skipped.map(nameOf).join(', '));
+      if (updated.length) summary.push('Progreso actualizado (sin cambiar el tiempo asignado): ' + updated.map(function (r) { return nameOf(r); }).join(', '));
+      if (skippedLocked.length) summary.push('Bloqueados, no se tocan: ' + skippedLocked.map(function (r) { return nameOf(r, ' (bloqueado)'); }).join(', '));
+      if (skipped.length) summary.push('Ya en tus temporizadores, no se tocan: ' + skipped.map(function (r) { return nameOf(r, r.ready ? ' (listo)' : ''); }).join(', '));
       if (summary.length) {
         var sum = document.createElement('div');
         sum.className = 'paste-summary';
@@ -1025,6 +1064,7 @@
     initSync();
     document.getElementById('editSave').onclick = function () {
       if (!editTarget) return;
+      if (editTarget.locked) { flashNotice('No se puede modificar: el temporizador está bloqueado. Desbloquéalo para poder cambiarlo.'); closeModal('editModal'); editTarget = null; return; }
       var h = parseInt(document.getElementById('editHours').value, 10) || 0;
       var m = parseInt(document.getElementById('editMinutes').value, 10) || 0;
       var ms = h * 3600000 + m * 60000;
@@ -1035,6 +1075,7 @@
     };
     document.getElementById('advanceSave').onclick = function () {
       if (!advanceTarget) return;
+      if (advanceTarget.locked) { flashNotice('No se puede modificar: el temporizador está bloqueado. Desbloquéalo para poder cambiarlo.'); closeModal('advanceModal'); advanceTarget = null; return; }
       var ms = MudaeParse.textToMs(document.getElementById('advanceTime').value);
       if (!ms || ms <= 0) { document.getElementById('advanceTime').focus(); return; }
       var t = advanceTarget;
@@ -1066,6 +1107,7 @@
     document.getElementById('resetBtn').onclick = function () { resetApp(); };
     document.getElementById('claimSave').onclick = function () {
       if (!claimTarget) return;
+      if (claimTarget.locked) { flashNotice('No se puede modificar: el temporizador está bloqueado. Desbloquéalo para poder cambiarlo.'); claimTarget = null; closeModal('claimModal'); return; }
       var n = parseInt(document.getElementById('claimAmount').value, 10);
       if (!n || n < 1) { document.getElementById('claimAmount').focus(); return; }
       n = Math.min(n, claimTarget.count || 0);
