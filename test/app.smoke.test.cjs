@@ -994,23 +994,31 @@ test('frontend: el candado bloquea modificar el temporizador hasta desbloquearlo
     assert.equal(by().locked, true, 'locked persiste en el estado');
     assert.ok(toasts().includes('bloqueado'), 'toast de bloqueo');
 
-    // modificar estando bloqueado: prohibido y avisa
-    const endLocked = by().endAt;
+    // el candado NO impide Reiniciar: reprograma a futuro conservando el contador
+    const endBefore = by().endAt;
+    const toastLen = doc.getElementById('toasts').children.length;
     buttonIn(card(), 'Reiniciar').onclick({ stopPropagation() {} });
-    assert.ok(toasts().includes('bloqueado') && toasts().includes('No se puede modificar'), 'avisa que no se puede modificar');
-    assert.equal(by().endAt, endLocked, 'Reiniciar no cambia nada');
-    assert.equal(by().count, 3, 'el contador no se toca');
+    assert.ok(by().endAt > endBefore, 'Reiniciar funciona aunque este bloqueado');
+    assert.equal(by().count, 3, 'Reiniciar sigue conservando el contador');
+    assert.equal(doc.getElementById('toasts').children.length, toastLen, 'no avisa que no se puede modificar');
 
-    buttonIn(card(), 'Una vez').onclick({ stopPropagation() {} });
-    assert.equal(by().mode, 'repeat', 'no cambia a Una vez');
-
+    // tampoco impide Reclamar: el modal aplica la cantidad aunque este bloqueado
     buttonIn(card(), 'Reclamar').onclick({ stopPropagation() {} });
-    assert.equal(by().count, 3, 'Reclamar se bloquea');
+    assert.equal(doc.getElementById('claimAvailable').textContent, 'Disponibles: 3', 'Reclamar abre el modal bloqueado');
+    doc.getElementById('claimAmount').value = '1';
+    doc.getElementById('claimSave').onclick();
+    assert.equal(by().count, 2, 'Reclamar resta aunque este bloqueado');
+
+    // el resto SI se bloquea
+    const endLocked = by().endAt;
+    buttonIn(card(), 'Una vez').onclick({ stopPropagation() {} });
+    assert.equal(by().mode, 'repeat', 'el candado si impide cambiar a Una vez');
 
     buttonIn(card(), 'Adelantar').onclick({ stopPropagation() {} });
     buttonIn(card(), 'Eliminar').onclick({ stopPropagation() {} });
     assert.equal(by().endAt, endLocked, 'Adelantar y Eliminar no hacen nada');
     assert.equal(JSON.parse(globals.localStorage._d['mudaeTimer.v1']).profiles[0].timers.length, 1, 'el temporizador no se elimina');
+    assert.ok(toasts().includes('No se puede modificar'), 'avisa que no se puede modificar');
 
     // el $tu no re-ancla un temporizador bloqueado
     doc.getElementById('pasteText').value = 'Claim reset en 5 min';
@@ -1018,12 +1026,12 @@ test('frontend: el candado bloquea modificar el temporizador hasta desbloquearlo
     assert.equal(by().endAt, endLocked, 'el $tu no modifica el bloqueado');
     assert.ok(flat(doc.getElementById('pasteResults')).includes('Bloqueados, no se tocan'), 'resumen senala el bloqueado');
 
-    // desbloquear: ya se puede modificar
+    // desbloquear: candado abierto y Reiniciar sigue funcionando
     buttonIn(card(), '🔒').onclick({ stopPropagation() {} });
     assert.ok(buttonIn(card(), '🔓'), 'candado abierto tras desbloquear');
     assert.equal(by().locked, false, 'locked false tras desbloquear');
     buttonIn(card(), 'Reiniciar').onclick({ stopPropagation() {} });
     assert.ok(by().endAt > Date.now(), 'tras desbloquear Reiniciar reprograma a futuro');
-    assert.equal(by().count, 3, 'Reiniciar conserva el contador');
+    assert.equal(by().count, 2, 'Reiniciar conserva el contador');
   });
 });

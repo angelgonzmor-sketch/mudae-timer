@@ -593,7 +593,6 @@
     btnRestart.textContent = 'Reiniciar';
     btnRestart.onclick = function (e) {
       e.stopPropagation();
-      if (blocked(t)) return;
       restartTimer(t, t.intervalMs || 3600000);
     };
     actions.appendChild(btnRestart);
@@ -601,7 +600,6 @@
     btnClaim.textContent = 'Reclamar';
     btnClaim.onclick = function (e) {
       e.stopPropagation();
-      if (blocked(t)) return;
       if ((t.count || 0) <= 0) {
         flashNotice('No hay nada que reclamar.');
         return;
@@ -1107,7 +1105,6 @@
     document.getElementById('resetBtn').onclick = function () { resetApp(); };
     document.getElementById('claimSave').onclick = function () {
       if (!claimTarget) return;
-      if (claimTarget.locked) { flashNotice('No se puede modificar: el temporizador está bloqueado. Desbloquéalo para poder cambiarlo.'); claimTarget = null; closeModal('claimModal'); return; }
       var n = parseInt(document.getElementById('claimAmount').value, 10);
       if (!n || n < 1) { document.getElementById('claimAmount').focus(); return; }
       n = Math.min(n, claimTarget.count || 0);
